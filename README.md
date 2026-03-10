@@ -2,12 +2,23 @@
 
 [Problem Link](https://www.kaggle.com/competitions/santa-workshop-tour-2019/overview)
 
+1. Represent the problem in a state class
+    - It shall include every detailed so that an evaluation function can accuratly give us a value
+
 1. Design the frontend (Recomended Flask)
     - It shall have a dashbord like GUI with a modern look
     - Further information representation shall be discussed
+    - The frontend should also allow for parameter tweaking using the following UI elements:
+        - [Input](https://ui.shadcn.com/docs/components/radix/input)
+        - [Slider](https://ui.shadcn.com/docs/components/radix/slider)
+        - [Select](https://ui.shadcn.com/docs/components/radix/select)
+        - [Checkbox](https://ui.shadcn.com/docs/components/radix/checkbox)
+        - [Radio Group](https://ui.shadcn.com/docs/components/radix/radio-group)
+        - [Switch](https://ui.shadcn.com/docs/components/radix/switch)
 
-1. Represent the problem in a state class
-    - It shall include every detailed so that an evaluation function can accuratly give us a value
+
+
+
 
 1. Create an evaluation function that gives us a "score" like value
     - It shall be used to infer if the new result is better than the previous one
