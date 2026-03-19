@@ -5,7 +5,6 @@ MAX_OCCUPANCY = 20
 MIN_OCCUPANCY = 0
 INVALID_PENALTY = 100_000_000_000_000_000
 
-
 def cost_function(prediction, family_size, choices):
 
     penalty = 0

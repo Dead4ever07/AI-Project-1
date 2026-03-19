@@ -21,5 +21,6 @@ def run(submission, family_size, choices):
             if score < best_score:
                 new = temp.copy()
                 best_score = score
+                #we could print here the each time the score is better
 
     return new, best_score
