@@ -3,8 +3,7 @@ from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
 
 MAX_ITERATIONS = 100
 SORT = False
-# TODO: sort by larger families and see if it makes difference
-
+# TODO: Maybe implement the possibly of sorting first with the frontend!
 
 def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     assignment = submission["assigned_day"].values.copy()
@@ -26,7 +25,7 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
 
     if SORT:
         family_ids = np.argsort(family_size)
-        print("  Processing smallest families first.")
+        print("Processing smallest families first.")
     else:
         family_ids = np.arange(len(assignment))
 
@@ -83,18 +82,16 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
                 improvements += 1
 
         print(
-            f"  Iteration {iteration}: score={current_score:.2f}  "
+            f"Iteration {iteration}: score={current_score:.2f}  "
             f"preference={preference_penalty:.2f}  accounting={accounting_cost:.2f}  "
             f"improvements={improvements}"
         )
         # TODO: update the frontend
 
         if improvements < 1:
-            print(
-                f"  Stopping early: there were no improvements."
-            )
+            print("Stopping early: there were no improvements.")
             break
     else:
-        print(f"  Stopping: reached max iterations ({MAX_ITERATIONS}).")
+        print(f"Stopping: reached max iterations ({MAX_ITERATIONS}).")
 
     return assignment, current_score
