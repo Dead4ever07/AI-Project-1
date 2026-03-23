@@ -38,4 +38,3 @@ def run_algorithms(data_file, submission_file, output_dir, n_days, min_occupancy
         algorithm_submission.to_csv(output_dir / f"{name}_submission.csv")
         print(f"Saved output for {name} -> {name}_submission.csv")
 
-

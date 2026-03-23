@@ -1,10 +1,11 @@
+import numpy as np
 from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
 
 MAX_ITERATIONS = 100
-MIN_IMPROVEMENTS = 5
-
-# TODO: update the frontend
+SORT = False
 # TODO: sort by larger families and see if it makes difference
+
+
 def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     assignment = submission["assigned_day"].values.copy()
 
@@ -23,11 +24,17 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     )
     # TODO: update the frontend
 
+    if SORT:
+        family_ids = np.argsort(family_size)
+        print("  Processing smallest families first.")
+    else:
+        family_ids = np.arange(len(assignment))
+
     for iteration in range(1, MAX_ITERATIONS + 1):
         improvements = 0
 
-        for fam_id in range(len(assignment)):
-            old_day = assignment[fam_id]
+        for family_id in family_ids:
+            old_day = assignment[family_id]
 
             best_delta = 0
             best_preference_delta = 0
@@ -35,13 +42,13 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
             best_new_day = None
 
             for pick in range(10):
-                new_day = choices[fam_id, pick]
+                new_day = choices[family_id, pick]
 
                 if new_day == old_day:
                     continue
 
                 result = delta_cost(
-                    fam_id,
+                    family_id,
                     old_day,
                     new_day,
                     accounting_cost,
@@ -66,15 +73,14 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
                     best_new_day = new_day
 
             if best_new_day is not None:
-                daily_occupancy[old_day] -= family_size[fam_id]
-                daily_occupancy[best_new_day] += family_size[fam_id]
-                assignment[fam_id] = best_new_day
+                daily_occupancy[old_day] -= family_size[family_id]
+                daily_occupancy[best_new_day] += family_size[family_id]
+                assignment[family_id] = best_new_day
                 preference_penalty += best_preference_delta
                 accounting_cost += best_accounting_delta
                 current_score += best_delta
                 # TODO: maybe fazer aqui um threshold de improvement!
                 improvements += 1
-                # TODO: update the frontend
 
         print(
             f"  Iteration {iteration}: score={current_score:.2f}  "
@@ -83,9 +89,9 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
         )
         # TODO: update the frontend
 
-        if improvements < MIN_IMPROVEMENTS:
+        if improvements < 1:
             print(
-                f"  Stopping early: fewer than {MIN_IMPROVEMENTS} improvements in this pass."
+                f"  Stopping early: there were no improvements."
             )
             break
     else:
