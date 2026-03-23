@@ -3,9 +3,13 @@ from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
 MAX_ITERATIONS = 100
 MIN_IMPROVEMENTS = 5
 
-# TODO: update the frontend
-# TODO: sort by larger families and see if it makes difference
-def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
+
+def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy, callback=None):
+
+    def emit(event):
+        if callback is not None:
+            callback(event)
+
     assignment = submission["assigned_day"].values.copy()
 
     daily_occupancy = build_daily_occupancy(assignment, family_size, n_days)
@@ -21,7 +25,9 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     print(
         f"Initial score: {current_score:.2f}  (preference: {preference_penalty:.2f}  accounting: {accounting_cost:.2f})"
     )
-    # TODO: update the frontend
+    emit({"type": "start", "score": current_score,
+          "preference": preference_penalty, "accounting": accounting_cost,
+          "occupancy": daily_occupancy.copy(), "assignment": assignment.copy()})
 
     for iteration in range(1, MAX_ITERATIONS + 1):
         improvements = 0
@@ -72,16 +78,19 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
                 preference_penalty += best_preference_delta
                 accounting_cost += best_accounting_delta
                 current_score += best_delta
-                # TODO: maybe fazer aqui um threshold de improvement!
                 improvements += 1
-                # TODO: update the frontend
+                emit({"type": "improvement", "score": current_score,
+                      "preference": preference_penalty, "accounting": accounting_cost,
+                      "iteration": iteration, "family": fam_id})
 
         print(
             f"  Iteration {iteration}: score={current_score:.2f}  "
             f"preference={preference_penalty:.2f}  accounting={accounting_cost:.2f}  "
             f"improvements={improvements}"
         )
-        # TODO: update the frontend
+        emit({"type": "iteration", "score": current_score,
+              "preference": preference_penalty, "accounting": accounting_cost,
+              "iteration": iteration, "improvements": improvements})
 
         if improvements < MIN_IMPROVEMENTS:
             print(
@@ -90,5 +99,9 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
             break
     else:
         print(f"  Stopping: reached max iterations ({MAX_ITERATIONS}).")
+
+    emit({"type": "done", "score": current_score,
+          "preference": preference_penalty, "accounting": accounting_cost,
+          "occupancy": daily_occupancy.copy(), "assignment": assignment.copy()})
 
     return assignment, current_score
