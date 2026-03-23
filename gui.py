@@ -16,9 +16,29 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
+"""
+The GUI should have multiple graphs that will be updated based on the data recived:
+
+1º Graph:
+    Total Cost / Iteration
+
+2º Graph:
+    Improvements / Iteration
+
+3º Graph:
+    Time / Iteration
+
+Another graphs may be added in the future.
+
+The algorithm should also provide a tab system or something similiar in order to
+easly alternate between algorithms so that the comprarission is facilitated
+"""
+
+
 class SantaGUI:
     def __init__(self, root):
         self.root = root
+        self.running = True
         self.root.title("Santa's Workshop Tour")
         self.root.geometry("800x600")
 
@@ -27,6 +47,9 @@ class SantaGUI:
         self.last_assignment = None
 
         self._build()
+        
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
         self._poll()
 
     def _build(self):
@@ -34,22 +57,27 @@ class SantaGUI:
         file_frame = tk.Frame(self.root)
         file_frame.pack(fill="x", padx=16, pady=10)
 
+        # File picker of the family information
+        # Maybe in the future convert this to a selector with multiple data sizes
         tk.Label(file_frame, text="Family data:").grid(row=0, column=0, sticky="w")
         self.v_data = tk.StringVar(value="input/easy_input.csv")
         tk.Entry(file_frame, textvariable=self.v_data, width=45).grid(row=0, column=1, padx=6)
         tk.Button(file_frame, text="Browse",
                   command=lambda: self._browse(self.v_data)).grid(row=0, column=2)
 
+        # Sample submission in the future will be related to the family data being possible to infer what values
+        # would be used (perhapse all in the same file) 
         tk.Label(file_frame, text="Submission:").grid(row=1, column=0, sticky="w", pady=4)
         self.v_sub = tk.StringVar(value="input/easy_sample_sumbmission.csv")
         tk.Entry(file_frame, textvariable=self.v_sub, width=45).grid(row=1, column=1, padx=6)
         tk.Button(file_frame, text="Browse",
                   command=lambda: self._browse(self.v_sub)).grid(row=1, column=2)
 
-        # params
+        # 
         par_frame = tk.Frame(self.root)
         par_frame.pack(fill="x", padx=16)
 
+        #Initial Values
         self.v_ndays = tk.IntVar(value=10)
         self.v_minoc = tk.IntVar(value=0)
         self.v_maxoc = tk.IntVar(value=20)
@@ -66,8 +94,10 @@ class SantaGUI:
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(fill="x", padx=16, pady=10)
 
+
         self.btn_run = tk.Button(btn_frame, text="Run", bg="#2ea043", fg="black",
                                  padx=12, command=self._start)
+
         self.btn_run.pack(side="left", padx=(0, 8))
 
         self.btn_save = tk.Button(btn_frame, text="Save result", state="disabled",
@@ -96,12 +126,15 @@ class SantaGUI:
         if p:
             var.set(p)
 
+    # The log should not exist and the graph should dynamically show the progress via
+    # a graph with total_cost/Iteration
     def _log(self, msg):
         self.log.configure(state="normal")
         self.log.insert("end", f"[{time.strftime('%H:%M:%S')}]  {msg}\n")
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    # The reading of the data should follow the previous comments
     def _start(self):
         try:
             data = pd.read_csv(self.v_data.get(), index_col="family_id")
@@ -115,7 +148,7 @@ class SantaGUI:
 
         self.score_history.clear()
         self.last_assignment = None
-        self.q = queue.Queue()
+
 
         self.btn_run.configure(state="disabled")
         self.btn_save.configure(state="disabled")
@@ -133,6 +166,11 @@ class SantaGUI:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _on_close(self):
+        self.running = False
+        plt.close(self.fig)
+        self.root.destroy() 
+
     def _save(self):
         if self.last_assignment is None:
             return
@@ -146,13 +184,17 @@ class SantaGUI:
                 path, index_label="family_id")
             self._log(f"Saved → {path}")
 
+    # The poll will be edited in the future to match other output formats
     def _poll(self):
         try:
             while True:
                 self._handle(self.q.get_nowait())
         except queue.Empty:
             pass
-        self.root.after(80, self._poll)
+
+
+        if(self.running):
+            self.root.after(80, self._poll)
 
     def _handle(self, ev):
         t = ev["type"]
