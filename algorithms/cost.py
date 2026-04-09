@@ -26,17 +26,6 @@ def _preference_penalty(fam_id, day, family_size, choices):
     return flat_cost + cost_per_member * n
 
 
-def _total_preference_penalty(prediction, family_size, choices):
-    """Compute the total preference penalty for all families."""
-    total_penalty = 0
-
-    for family_id, day in enumerate(prediction):
-        penalty = _preference_penalty(family_id, day, family_size, choices)
-        total_penalty += penalty
-
-    return total_penalty
-
-
 def _accounting_cost_last_day(today, min_occupancy):
     return max(0.0, (today - min_occupancy) / 400.0 * today**0.5)
 

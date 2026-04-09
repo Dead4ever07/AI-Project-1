@@ -1,5 +1,6 @@
 import pandas as pd
 from algorithms import hill_climbing
+from algorithms import simulated_annealing
 
 
 # ================================
@@ -21,21 +22,31 @@ def prepare_arrays(data):
 # ================================
 # RUN ALGORITHMS
 # ================================
-def run_algorithms(data_file, submission_file, output_dir, n_days, min_occupancy, max_occupancy):
-    data, submission = load_data(data_file,submission_file)
+def run_algorithms(
+    data_file, submission_file, output_dir, n_days, min_occupancy, max_occupancy
+):
+    data, submission = load_data(data_file, submission_file)
     family_size, choices = prepare_arrays(data)
 
-    algorithms = [("hill_climbing", hill_climbing.run)]
+    algorithms = [
+
+        ("simulated_annealing", simulated_annealing.run),
+    ]
 
     for name, algorithm in algorithms:
         print(f"\nRunning {name}...")
-        solution, score = algorithm(submission.copy(), family_size, choices, n_days, min_occupancy, max_occupancy)
+        result = algorithm(
+            submission.copy(),
+            family_size,
+            choices,
+            n_days,
+            min_occupancy,
+            max_occupancy,
+        )
+        solution, score = result[0], result[1]
         print(f"{name} score: {score}")
 
         algorithm_submission = submission.copy()
-        algorithm_submission["assigned_day"] = solution
-        algorithm_submission.loc["cost"] = [score]
+        algorithm_submission["assigned_day"] = solution.astype(int)
         algorithm_submission.to_csv(output_dir / f"{name}_submission.csv")
         print(f"Saved output for {name} -> {name}_submission.csv")
-
-

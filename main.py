@@ -9,11 +9,13 @@ BASE_DIR = Path(__file__).parent
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
-DATA_FILE = INPUT_DIR / "easy_input.csv"
-SUBMISSION_FILE = INPUT_DIR / "easy_sample_sumbmission.csv"
-N_DAYS = 10
-MAX_OCCUPANCY = 20
-MIN_OCCUPANCY = 0
+DATA_FILE = INPUT_DIR / "family_data.csv"
+SUBMISSION_FILE = (
+    INPUT_DIR / "sample_submission.csv"
+)
+N_DAYS = 100
+MAX_OCCUPANCY = 300
+MIN_OCCUPANCY = 125
 
 
 # ================================

@@ -1,15 +1,17 @@
+import numpy as np
 from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
 
 MAX_ITERATIONS = 100
-MIN_IMPROVEMENTS = 5
+SORT = False
 
+_callback = None
+_stop = False
 
-def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy, callback=None):
+def emit(ev: dict):
+    if _callback is not None:
+        _callback(ev)
 
-    def emit(event):
-        if callback is not None:
-            callback(event)
-
+def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     assignment = submission["assigned_day"].values.copy()
 
     daily_occupancy = build_daily_occupancy(assignment, family_size, n_days)
@@ -27,13 +29,22 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy, 
     )
     emit({"type": "start", "score": current_score,
           "preference": preference_penalty, "accounting": accounting_cost,
-          "occupancy": daily_occupancy.copy(), "assignment": assignment.copy()})
+          "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
+
+    if SORT:
+        family_ids = np.argsort(family_size)
+        print("Processing smallest families first.")
+    else:
+        family_ids = np.arange(len(assignment))
 
     for iteration in range(1, MAX_ITERATIONS + 1):
+        if _stop:
+            print("Stopping: stop requested.")
+            break
         improvements = 0
 
-        for fam_id in range(len(assignment)):
-            old_day = assignment[fam_id]
+        for family_id in family_ids:
+            old_day = assignment[family_id]
 
             best_delta = 0
             best_preference_delta = 0
@@ -41,13 +52,13 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy, 
             best_new_day = None
 
             for pick in range(10):
-                new_day = choices[fam_id, pick]
+                new_day = choices[family_id, pick]
 
                 if new_day == old_day:
                     continue
 
                 result = delta_cost(
-                    fam_id,
+                    family_id,
                     old_day,
                     new_day,
                     accounting_cost,
@@ -72,19 +83,16 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy, 
                     best_new_day = new_day
 
             if best_new_day is not None:
-                daily_occupancy[old_day] -= family_size[fam_id]
-                daily_occupancy[best_new_day] += family_size[fam_id]
-                assignment[fam_id] = best_new_day
+                daily_occupancy[old_day] -= family_size[family_id]
+                daily_occupancy[best_new_day] += family_size[family_id]
+                assignment[family_id] = best_new_day
                 preference_penalty += best_preference_delta
                 accounting_cost += best_accounting_delta
                 current_score += best_delta
                 improvements += 1
-                emit({"type": "improvement", "score": current_score,
-                      "preference": preference_penalty, "accounting": accounting_cost,
-                      "iteration": iteration, "family": fam_id})
 
         print(
-            f"  Iteration {iteration}: score={current_score:.2f}  "
+            f"Iteration {iteration}: score={current_score:.2f}  "
             f"preference={preference_penalty:.2f}  accounting={accounting_cost:.2f}  "
             f"improvements={improvements}"
         )
@@ -92,16 +100,14 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy, 
               "preference": preference_penalty, "accounting": accounting_cost,
               "iteration": iteration, "improvements": improvements})
 
-        if improvements < MIN_IMPROVEMENTS:
-            print(
-                f"  Stopping early: fewer than {MIN_IMPROVEMENTS} improvements in this pass."
-            )
+        if improvements < 1:
+            print("Stopping early: there were no improvements.")
             break
     else:
-        print(f"  Stopping: reached max iterations ({MAX_ITERATIONS}).")
+        print(f"Stopping: reached max iterations ({MAX_ITERATIONS}).")
 
     emit({"type": "done", "score": current_score,
           "preference": preference_penalty, "accounting": accounting_cost,
-          "occupancy": daily_occupancy.copy(), "assignment": assignment.copy()})
+          "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
 
     return assignment, current_score
