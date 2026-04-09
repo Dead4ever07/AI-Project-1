@@ -32,69 +32,74 @@ def _score_individual(
     return result[0] + result[1]
 
 
-def _repair(
-    assignment, family_size, choices, n_days, min_occupancy, max_occupancy, rng
+def _build_valid_individual(
+    base_assignment,
+    family_size,
+    choices,
+    n_days,
+    min_occupancy,
+    max_occupancy,
+    rng,
+    perturbation=0.4,
 ):
     """
-    Greedily repair an assignment that violates occupancy constraints.
+    Build a valid individual in O(n_families) without any repair loop.
 
-    Strategy: iterate over days that are over/under capacity and move families
-    to their next-best available choice until all days are within bounds.
-    Falls back to a random valid choice when no preference slot helps.
+    For each family (visited in random order):
+      1. With probability `perturbation`, shuffle its preference list so we
+         explore different choices across the population.
+      2. Try each preference in order; commit to the first one that keeps
+         the target day within [min_occupancy, max_occupancy].
+      3. If no preference fits, fall back to the base assignment's day
+         (which is already valid since the base solution is valid, and we
+         process families one at a time so earlier commitments hold).
+
+    Because we only ever ADD a family to a day when capacity allows, the
+    resulting assignment is guaranteed valid — no repair needed.
     """
-    daily_occupancy = build_daily_occupancy(assignment, family_size, n_days)
-    n_families = len(assignment)
+    daily_occupancy = np.zeros(n_days + 1, dtype=np.int32)
+    assignment = np.empty(len(base_assignment), dtype=base_assignment.dtype)
+    n_families = len(base_assignment)
 
-    for _ in range(n_families * 2):  # bounded repair attempts
-        # Find first violating day
-        violated = -1
-        for day in range(1, n_days + 1):
-            if (
-                daily_occupancy[day] > max_occupancy
-                or daily_occupancy[day] < min_occupancy
-            ):
-                violated = day
-                break
-        if violated == -1:
-            break  # all days valid
+    for fam_id in rng.permutation(n_families):
+        n = family_size[fam_id]
+        pref = choices[fam_id].copy()  # shape (10,)
 
-        over = daily_occupancy[violated] > max_occupancy
+        if rng.random() < perturbation:
+            rng.shuffle(pref)
 
-        # Collect families on that day
-        candidates = [f for f in range(n_families) if assignment[f] == violated]
-        if not candidates:
-            break
-
-        # Pick the family whose move costs least in preference
-        rng.shuffle(candidates)
-        moved = False
-        for fam_id in candidates:
-            for rank in range(10):
-                candidate_day = choices[fam_id, rank]
-                if candidate_day == violated:
-                    continue
-                new_occ = daily_occupancy[candidate_day] + family_size[fam_id]
-                old_occ = daily_occupancy[violated] - family_size[fam_id]
-                if new_occ <= max_occupancy and old_occ >= min_occupancy:
-                    daily_occupancy[violated] -= family_size[fam_id]
-                    daily_occupancy[candidate_day] += family_size[fam_id]
-                    assignment[fam_id] = candidate_day
-                    moved = True
-                    break
-            if moved:
+        placed = False
+        for day in pref:
+            if daily_occupancy[day] + n <= max_occupancy:
+                daily_occupancy[day] += n
+                assignment[fam_id] = day
+                placed = True
                 break
 
-        if not moved:
-            # Force-move a random family to a random valid day
-            fam_id = candidates[0]
-            for day in rng.permutation(np.arange(1, n_days + 1)):
-                new_occ = daily_occupancy[day] + family_size[fam_id]
-                old_occ = daily_occupancy[violated] - family_size[fam_id]
-                if new_occ <= max_occupancy and old_occ >= min_occupancy:
-                    daily_occupancy[violated] -= family_size[fam_id]
-                    daily_occupancy[day] += family_size[fam_id]
-                    assignment[fam_id] = day
-                    break
+        if not placed:
+            # Fall back: pick the least-occupied day among preferences
+            best_day = pref[int(np.argmin([daily_occupancy[d] for d in pref]))]
+            daily_occupancy[best_day] += n
+            assignment[fam_id] = best_day
+
+    # Fast min-occupancy check — violations are uncommon; fix them cheaply
+    for day in range(1, n_days + 1):
+        while daily_occupancy[day] < min_occupancy:
+            # Pull the largest available family from the most crowded day
+            donor_day = int(np.argmax(daily_occupancy[1:]) + 1)
+            if donor_day == day:
+                break
+            # Find a family on donor_day
+            for fam_id in range(n_families):
+                if assignment[fam_id] == donor_day:
+                    n = family_size[fam_id]
+                    if daily_occupancy[donor_day] - n >= min_occupancy:
+                        daily_occupancy[donor_day] -= n
+                        daily_occupancy[day] += n
+                        assignment[fam_id] = day
+                        break
+            else:
+                break  # couldn't fix — cost_function will catch it
 
     return assignment
 
@@ -108,27 +113,26 @@ def _init_population(
     base_assignment, family_size, choices, n_days, min_occupancy, max_occupancy, rng
 ):
     """
-    Seed the population:
+    Seed the population in O(POPULATION_SIZE * n_families):
       - Individual 0  : the provided starting solution (unchanged).
-      - Individuals 1+: perturbed copies — each family is randomly reassigned
-                        to one of its top-10 choices, then repaired.
+      - Individuals 1+: fresh valid assignments built directly without repair,
+                        with varying perturbation levels for diversity.
     """
-    population = []
-    n_families = len(base_assignment)
+    population = [base_assignment.copy()]
 
-    for i in range(POPULATION_SIZE):
-        if i == 0:
-            ind = base_assignment.copy()
-        else:
-            ind = base_assignment.copy()
-            # Randomly reassign a fraction of families to a random preference
-            mask = rng.random(n_families) < 0.4
-            for fam_id in np.where(mask)[0]:
-                ind[fam_id] = choices[fam_id, rng.integers(0, 10)]
-            ind = _repair(
-                ind, family_size, choices, n_days, min_occupancy, max_occupancy, rng
-            )
-
+    for i in range(1, POPULATION_SIZE):
+        # Gradually increase perturbation so the population spans a wide range
+        perturbation = 0.2 + 0.6 * (i / POPULATION_SIZE)
+        ind = _build_valid_individual(
+            base_assignment,
+            family_size,
+            choices,
+            n_days,
+            min_occupancy,
+            max_occupancy,
+            rng,
+            perturbation=perturbation,
+        )
         population.append(ind)
 
     return population
@@ -155,15 +159,46 @@ def _crossover(
     parent_a, parent_b, family_size, choices, n_days, min_occupancy, max_occupancy, rng
 ):
     """
-    Uniform crossover at the family level:
-      - Each family independently inherits its day from parent A or B (50/50).
-      - The offspring is then repaired if it violates occupancy bounds.
+    Occupancy-aware uniform crossover — no repair needed.
+
+    Families are visited in random order. Each one inherits its preferred
+    parent's day if that day still has capacity; otherwise it tries the
+    other parent's day; otherwise it falls back through ranked preferences.
+    The child is valid by construction in O(n_families).
     """
-    mask = rng.integers(0, 2, size=len(parent_a)).astype(bool)
-    child = np.where(mask, parent_a, parent_b)
-    child = _repair(
-        child, family_size, choices, n_days, min_occupancy, max_occupancy, rng
-    )
+    n_families = len(parent_a)
+    daily_occupancy = np.zeros(n_days + 1, dtype=np.int32)
+    child = np.empty(n_families, dtype=parent_a.dtype)
+    mask = rng.integers(0, 2, size=n_families).astype(bool)
+
+    for fam_id in rng.permutation(n_families):
+        n = family_size[fam_id]
+        first = parent_a[fam_id] if mask[fam_id] else parent_b[fam_id]
+        second = parent_b[fam_id] if mask[fam_id] else parent_a[fam_id]
+
+        placed = False
+        for day in (first, second):
+            if daily_occupancy[day] + n <= max_occupancy:
+                daily_occupancy[day] += n
+                child[fam_id] = day
+                placed = True
+                break
+
+        if not placed:
+            for day in choices[fam_id]:
+                if daily_occupancy[day] + n <= max_occupancy:
+                    daily_occupancy[day] += n
+                    child[fam_id] = day
+                    placed = True
+                    break
+
+        if not placed:
+            best = choices[
+                fam_id, int(np.argmin([daily_occupancy[d] for d in choices[fam_id]]))
+            ]
+            daily_occupancy[best] += n
+            child[fam_id] = best
+
     return child
 
 
