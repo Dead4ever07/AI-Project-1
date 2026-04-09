@@ -1,6 +1,5 @@
 import pandas as pd
-from algorithms import hill_climbing
-from algorithms import simulated_annealing
+from algorithms import hill_climbing, simulated_annealing, genetic_algorithm
 
 
 # ================================
@@ -29,8 +28,7 @@ def run_algorithms(
     family_size, choices = prepare_arrays(data)
 
     algorithms = [
-
-        ("simulated_annealing", simulated_annealing.run),
+        ("genetic_algorithm", genetic_algorithm.run)
     ]
 
     for name, algorithm in algorithms:
