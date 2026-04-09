@@ -78,16 +78,26 @@ def run_algorithm():
         body = request.get_json(force=True)
         data_name = body.get("data_file", "")
         sub_name  = body.get("sub_file", "")
-        n_days    = int(body.get("n_days", 100))
-        min_occ   = int(body.get("min_occ", 125))
-        max_occ   = int(body.get("max_occ", 300))
         algorithm = body.get("algorithm", "hill_climbing")
 
         data_path = INPUT_DIR / data_name
         sub_path  = INPUT_DIR / sub_name
 
         try:
-            data = pd.read_csv(data_path, index_col="family_id")
+            with open(data_path, "r") as f:
+                header = f.readline().strip()
+                if "number_days" in header:
+                    vals = f.readline().strip().split(",")
+                    n_days  = int(vals[0])
+                    max_occ = int(vals[1])
+                    min_occ = int(vals[2])
+                    data = pd.read_csv(data_path, skiprows=2, index_col="family_id")
+                else:
+                    n_days = 100
+                    min_occ = 125
+                    max_occ = 300
+                    data = pd.read_csv(data_path, index_col="family_id")
+            
             sub  = pd.read_csv(sub_path,  index_col="family_id")
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
@@ -162,8 +172,8 @@ def stop_algorithm():
     return jsonify({"status": "stop requested"})
 
 
-@app.route("/graph/occupancy.png")
-def graph_occupancy():
+@app.route("/data/occupancy")
+def data_occupancy():
     with _state_lock:
         if "assignment" not in _run_result:
             return jsonify({"error": "No result available"}), 404
@@ -178,28 +188,16 @@ def graph_occupancy():
         occupancy[d] += family_size[f]
     occ = occupancy[1:]
 
-    fig, ax = plt.subplots(figsize=(10, 4))
-    days = np.arange(1, n_days + 1)
-    colors = ["#e05252" if (v < min_occ or v > max_occ) else "#4c9be8" for v in occ]
-    ax.bar(days, occ, color=colors, alpha=0.85, width=0.85)
-    ax.axhline(min_occ, color="#2ecc71", linestyle="--", linewidth=1.2, label=f"Min ({min_occ})")
-    ax.axhline(max_occ, color="#e74c3c", linestyle="--", linewidth=1.2, label=f"Max ({max_occ})")
-    ax.set_xlabel("Day", fontsize=11)
-    ax.set_ylabel("People", fontsize=11)
-    ax.set_title("Daily Workshop Occupancy", fontsize=13, fontweight="bold")
-    ax.legend(fontsize=9)
-    ax.set_xlim(0, n_days + 1)
-    fig.tight_layout()
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return jsonify({
+        "days": list(range(1, n_days + 1)),
+        "occupancy": occ.tolist(),
+        "min_occ": min_occ,
+        "max_occ": max_occ
+    })
 
 
-@app.route("/graph/choices.png")
-def graph_choices():
+@app.route("/data/choices")
+def data_choices():
     with _state_lock:
         if "assignment" not in _run_result:
             return jsonify({"error": "No result available"}), 404
@@ -215,46 +213,18 @@ def graph_choices():
                 break
         rank_counts[rank] += 1
 
-    labels = [f"Choice {i}" for i in range(10)] + ["Not top-10"]
-    palette = plt.cm.RdYlGn(np.linspace(0.85, 0.1, 11))
+    top3  = int(rank_counts[:3].sum())
+    top10 = int(rank_counts[3:10].sum())
+    not10 = int(rank_counts[10])
 
-    fig, (ax_bar, ax_pie) = plt.subplots(1, 2, figsize=(12, 4.5))
-
-    bars = ax_bar.bar(labels, rank_counts, color=palette, edgecolor="white", linewidth=0.6)
-    for bar, cnt in zip(bars, rank_counts):
-        if cnt:
-            ax_bar.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.4,
-                        str(cnt), ha="center", va="bottom", fontsize=8)
-    ax_bar.set_xlabel("Preference Rank", fontsize=11)
-    ax_bar.set_ylabel("Families", fontsize=11)
-    ax_bar.set_title("Families per Choice Rank", fontsize=12, fontweight="bold")
-    ax_bar.tick_params(axis="x", rotation=45)
-
-    top3  = rank_counts[:3].sum()
-    top10 = rank_counts[3:10].sum()
-    not10 = rank_counts[10]
-    wedges, texts, autotexts = ax_pie.pie(
-        [top3, top10, not10],
-        labels=["Top-3 choices", "Choice 4-10", "Not in top-10"],
-        colors=["#2ecc71", "#f39c12", "#e74c3c"],
-        autopct="%1.1f%%",
-        startangle=140,
-        wedgeprops={"edgecolor": "white", "linewidth": 1.2},
-    )
-    for at in autotexts:
-        at.set_fontsize(9)
-    ax_pie.set_title("Preference Satisfaction", fontsize=12, fontweight="bold")
-
-    fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return jsonify({
+        "rank_counts": rank_counts.tolist(),
+        "pie_data": [top3, top10, not10]
+    })
 
 
-@app.route("/graph/family_size.png")
-def graph_family_size():
+@app.route("/data/family_size")
+def data_family_size():
     with _state_lock:
         if "assignment" not in _run_result:
             return jsonify({"error": "No result available"}), 404
@@ -262,21 +232,10 @@ def graph_family_size():
 
     sizes, counts = np.unique(family_size, return_counts=True)
 
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.bar(sizes, counts, color="#9b59b6", alpha=0.85, edgecolor="white", width=0.6)
-    ax.set_xlabel("Family Size (people)", fontsize=11)
-    ax.set_ylabel("Number of Families", fontsize=11)
-    ax.set_title("Family Size Distribution", fontsize=13, fontweight="bold")
-    ax.set_xticks(sizes)
-    for s, c in zip(sizes, counts):
-        ax.text(s, c + 0.3, str(c), ha="center", va="bottom", fontsize=9)
-    fig.tight_layout()
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return jsonify({
+        "sizes": sizes.tolist(),
+        "counts": counts.tolist()
+    })
 
 
 @app.route("/download")

@@ -50,8 +50,6 @@
     .log-err  { color: var(--red);  font-weight: 600; }
     canvas    { max-height: 280px; }
     .graph-img { width: 100%; border-radius: 8px; display: none; }
-    .progress { height: 6px; background: var(--border); }
-    .progress-bar { background: linear-gradient(90deg, var(--blue), var(--green)); transition: width .4s; }
     .iter-badge { font-size: .75rem; padding: .25em .6em; }
   </style>
 </head>
@@ -91,20 +89,7 @@
               <option value="simulated_annealing">Simulated Annealing</option>
             </select>
           </div>
-          <div class="row g-2 mb-3">
-            <div class="col-4">
-              <label class="form-label">N Days</label>
-              <input id="inp-days" type="number" class="form-control form-control-sm" value="100" min="1" />
-            </div>
-            <div class="col-4">
-              <label class="form-label">Min Occ.</label>
-              <input id="inp-min" type="number" class="form-control form-control-sm" value="125" min="0" />
-            </div>
-            <div class="col-4">
-              <label class="form-label">Max Occ.</label>
-              <input id="inp-max" type="number" class="form-control form-control-sm" value="300" min="1" />
-            </div>
-          </div>
+
           <div class="d-flex gap-2 flex-wrap">
             <button id="btn-run"  class="btn btn-run  btn-sm">▶ Run</button>
             <button id="btn-stop" class="btn btn-stop btn-sm" style="display:none">■ Stop</button>
@@ -140,13 +125,6 @@
               <div class="stat-label">Iteration</div>
             </div>
           </div>
-          <div class="mb-3" id="progress-wrap" style="display:none">
-            <div class="d-flex justify-content-between mb-1" style="font-size:.78rem; color:var(--muted)">
-              <span>Progress</span>
-              <span id="prog-label">0%</span>
-            </div>
-            <div class="progress"><div id="prog-bar" class="progress-bar" style="width:0%"></div></div>
-          </div>
           <div id="log-box"></div>
         </div>
       </div>
@@ -173,7 +151,7 @@
       <div class="card">
         <div class="card-header">Daily Workshop Occupancy</div>
         <div class="card-body text-center" style="padding:12px">
-          <img id="img-occupancy" class="graph-img" alt="Occupancy" />
+          <canvas id="canvas-occupancy"></canvas>
         </div>
       </div>
     </div>
@@ -181,7 +159,10 @@
       <div class="card">
         <div class="card-header">Family Preference Satisfaction</div>
         <div class="card-body text-center" style="padding:12px">
-          <img id="img-choices" class="graph-img" alt="Choices" />
+          <div class="row">
+            <div class="col-md-8"><canvas id="canvas-choices-bar"></canvas></div>
+            <div class="col-md-4"><canvas id="canvas-choices-pie"></canvas></div>
+          </div>
         </div>
       </div>
     </div>
@@ -189,7 +170,7 @@
       <div class="card">
         <div class="card-header">Family Size Distribution</div>
         <div class="card-body text-center" style="padding:12px">
-          <img id="img-family-size" class="graph-img" alt="Family sizes" />
+          <canvas id="canvas-family-size"></canvas>
         </div>
       </div>
     </div>
@@ -269,6 +250,11 @@ const bdChart = new Chart(ctxBd, {
 let evtSource = null;
 let iteration = 0;
 
+let chartOccupancy = null;
+let chartChoicesBar = null;
+let chartChoicesPie = null;
+let chartFamilySize = null;
+
 const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 1 });
 
 function setStatus(state) {
@@ -316,13 +302,10 @@ function resetCharts() {
   document.getElementById("stat-iter").textContent  = "—";
   document.getElementById("post-graphs").style.display = "none";
   document.getElementById("btn-dl").style.display = "none";
-  document.getElementById("progress-wrap").style.display = "none";
-  document.getElementById("prog-bar").style.width = "0%";
-  document.getElementById("prog-label").textContent = "0%";
-  ["img-occupancy","img-choices","img-family-size"].forEach(id => {
-    const el = document.getElementById(id);
-    el.src = ""; el.style.display = "none";
-  });
+  if (chartOccupancy) { chartOccupancy.destroy(); chartOccupancy = null; }
+  if (chartChoicesBar) { chartChoicesBar.destroy(); chartChoicesBar = null; }
+  if (chartChoicesPie) { chartChoicesPie.destroy(); chartChoicesPie = null; }
+  if (chartFamilySize) { chartFamilySize.destroy(); chartFamilySize = null; }
 }
 
 function handleEvent(ev) {
@@ -351,12 +334,6 @@ function handleEvent(ev) {
       : `  moves=${d.improvements ?? ""}`;
     addLog(`Iter ${d.iteration}: ${fmt(d.score)}${extra}`, "log-iter");
 
-    if (d.improvements !== undefined) {
-      const pct = Math.min(d.iteration, 100);
-      document.getElementById("prog-bar").style.width = pct + "%";
-      document.getElementById("prog-label").textContent = pct + "%";
-    }
-
     pushData(d.iteration, d.score, d.best_score ?? null, d.preference, d.accounting);
     return;
   }
@@ -370,22 +347,104 @@ function handleEvent(ev) {
     document.getElementById("btn-run").disabled = false;
     document.getElementById("btn-stop").style.display = "none";
     document.getElementById("btn-dl").style.display = "inline-block";
-    document.getElementById("prog-bar").style.width = "100%";
-    document.getElementById("prog-label").textContent = "100%";
 
     document.getElementById("post-graphs").style.display = "flex";
     document.getElementById("post-graphs").style.flexWrap = "wrap";
-    const ts = Date.now();
-    ["img-occupancy", "img-choices", "img-family-size"].forEach((id, i) => {
-      const srcs = [
-        `/graph/occupancy.png?t=${ts}`,
-        `/graph/choices.png?t=${ts}`,
-        `/graph/family_size.png?t=${ts}`
-      ];
-      const el = document.getElementById(id);
-      el.src = srcs[i];
-      el.style.display = "block";
+    
+    fetch('/data/occupancy').then(r => r.json()).then(data => {
+      const ctxOcc = document.getElementById('canvas-occupancy').getContext('2d');
+      const bgColorsOcc = data.occupancy.map(v => (v < data.min_occ || v > data.max_occ) ? '#e05252' : '#4c9be8');
+      chartOccupancy = new Chart(ctxOcc, {
+        type: 'bar',
+        data: {
+          labels: data.days,
+          datasets: [
+            {
+              type: 'line',
+              label: 'Min (' + data.min_occ + ')',
+              data: Array(data.days.length).fill(data.min_occ),
+              borderColor: '#2ecc71',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'line',
+              label: 'Max (' + data.max_occ + ')',
+              data: Array(data.days.length).fill(data.max_occ),
+              borderColor: '#e74c3c',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'bar',
+              label: 'Occupancy',
+              data: data.occupancy,
+              backgroundColor: bgColorsOcc
+            }
+          ]
+        },
+        options: { ...chartDefaults }
+      });
     });
+
+    fetch('/data/choices').then(r => r.json()).then(data => {
+      const ctxCb = document.getElementById('canvas-choices-bar').getContext('2d');
+      const rankLabels = Array.from({length: 10}, (_, i) => "Choice " + i).concat(["Not top-10"]);
+      chartChoicesBar = new Chart(ctxCb, {
+        type: 'bar',
+        data: {
+          labels: rankLabels,
+          datasets: [{
+            label: 'Families',
+            data: data.rank_counts,
+            backgroundColor: ['#1a9850','#66bd63','#a6d96a','#d9ef8b','#ffffbf','#fee08b','#fdae61','#f46d43','#d73027','#a50026','#800000']
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+
+      const ctxCp = document.getElementById('canvas-choices-pie').getContext('2d');
+      chartChoicesPie = new Chart(ctxCp, {
+        type: 'pie',
+        data: {
+          labels: ["Top-3 choices", "Choice 4-10", "Not in top-10"],
+          datasets: [{
+            data: data.pie_data,
+            backgroundColor: ["#2ecc71", "#f39c12", "#e74c3c"],
+            borderColor: '#23272f',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#e8eaf0", font: { size: 11 } } }
+          }
+        }
+      });
+    });
+
+    fetch('/data/family_size').then(r => r.json()).then(data => {
+      const ctxFs = document.getElementById('canvas-family-size').getContext('2d');
+      chartFamilySize = new Chart(ctxFs, {
+        type: 'bar',
+        data: {
+          labels: data.sizes,
+          datasets: [{
+            label: 'Number of Families',
+            data: data.counts,
+            backgroundColor: '#9b59b6'
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+    });
+
     return;
   }
 
@@ -417,15 +476,11 @@ document.getElementById("btn-run").addEventListener("click", async () => {
     data_file: document.getElementById("sel-data").value,
     sub_file:  document.getElementById("sel-sub").value,
     algorithm: document.getElementById("sel-algo").value,
-    n_days:    +document.getElementById("inp-days").value,
-    min_occ:   +document.getElementById("inp-min").value,
-    max_occ:   +document.getElementById("inp-max").value,
   };
 
   document.getElementById("btn-run").disabled = true;
   document.getElementById("btn-stop").style.display = "inline-block";
   document.getElementById("btn-stop").disabled = false;
-  document.getElementById("progress-wrap").style.display = "block";
   setStatus("running");
   addLog(`Starting ${body.algorithm.replace("_"," ")} on ${body.data_file}…`);
 

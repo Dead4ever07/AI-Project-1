@@ -1,3 +1,5 @@
+number_days,max_occupancy,min_occupancy
+100, 300, 125
 family_id,choice_0,choice_1,choice_2,choice_3,choice_4,choice_5,choice_6,choice_7,choice_8,choice_9,n_people
 0,52,38,12,82,33,75,64,76,10,28,4
 1,26,4,82,5,11,47,38,6,66,61,4
