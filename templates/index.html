@@ -51,6 +51,9 @@
     canvas    { max-height: 280px; }
     .graph-img { width: 100%; border-radius: 8px; display: none; }
     .iter-badge { font-size: .75rem; padding: .25em .6em; }
+    .table { color: var(--text); --bs-table-bg: transparent; --bs-table-border-color: var(--border); }
+    .table th { font-weight: 600; color: var(--muted); border-bottom-width: 1px; }
+    .table td, .table th { padding: 8px 16px; border-bottom: 1px solid var(--border); }
   </style>
 </head>
 <body>
@@ -126,6 +129,17 @@
             </div>
           </div>
           <div id="log-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12">
+      <div class="card h-100">
+        <div class="card-header">Run Comparison</div>
+        <div class="card-body" style="padding:12px; display:flex; align-items:center;">
+          <canvas id="chart-compare" style="max-height: 250px;"></canvas>
         </div>
       </div>
     </div>
@@ -247,8 +261,54 @@ const bdChart = new Chart(ctxBd, {
   options: { ...chartDefaults }
 });
 
+const ctxCompare = document.getElementById("chart-compare").getContext("2d");
+const compareChart = new Chart(ctxCompare, {
+  type: 'bar',
+  data: {
+    labels: ['Hill Climbing', 'Simulated Annealing'],
+    datasets: [
+      {
+        label: 'Pref Penalty',
+        data: [null, null],
+        backgroundColor: '#f39c12',
+      },
+      {
+        label: 'Acc Cost',
+        data: [null, null],
+        backgroundColor: '#e74c3c',
+      },
+      {
+        label: 'Total Cost',
+        data: [null, null],
+        backgroundColor: '#4c9be8',
+      },
+      {
+        label: 'Run Time (s)',
+        data: [null, null],
+        backgroundColor: '#9b59b6',
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      x: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } },
+      y: { type: 'logarithmic', ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } }
+    },
+    plugins: {
+      legend: { labels: { color: "#e8eaf0", font: { size: 10 } } }
+    }
+  }
+});
+
 let evtSource = null;
 let iteration = 0;
+let startTime = 0;
+
+document.getElementById("sel-data").addEventListener("change", () => {
+  compareChart.data.datasets.forEach(ds => ds.data = [null, null]);
+  compareChart.update();
+});
 
 let chartOccupancy = null;
 let chartChoicesBar = null;
@@ -289,11 +349,11 @@ function pushData(iter, score, bestScore, pref, acc) {
 }
 
 function resetCharts() {
-  costChart.data.labels = [];
-  costChart.data.datasets.forEach(d => d.data = []);
+  costChart.data.labels.length = 0;
+  costChart.data.datasets.forEach(d => d.data.length = 0);
   costChart.update();
-  bdChart.data.labels = [];
-  bdChart.data.datasets.forEach(d => d.data = []);
+  bdChart.data.labels.length = 0;
+  bdChart.data.datasets.forEach(d => d.data.length = 0);
   bdChart.update();
   iteration = 0;
   document.getElementById("stat-total").textContent = "—";
@@ -314,6 +374,7 @@ function handleEvent(ev) {
   if (d.type === "ping") return;
 
   if (d.type === "start") {
+    startTime = Date.now();
     addLog(`Initial cost: ${fmt(d.score)}  (pref ${fmt(d.preference)} + acc ${fmt(d.accounting)})`, "log-iter");
     document.getElementById("stat-total").textContent = fmt(d.score);
     document.getElementById("stat-pref").textContent  = fmt(d.preference);
@@ -339,11 +400,21 @@ function handleEvent(ev) {
   }
 
   if (d.type === "done") {
+    const runTimeSecs = (Date.now() - startTime) / 1000;
     document.getElementById("stat-total").textContent = fmt(d.score);
     document.getElementById("stat-pref").textContent  = fmt(d.preference);
     document.getElementById("stat-acc").textContent   = fmt(d.accounting);
-    addLog(`Done! Final cost: ${fmt(d.score)}`, "log-done");
+    addLog(`Done! Final cost: ${fmt(d.score)} in ${runTimeSecs.toFixed(2)}s`, "log-done");
     setStatus("done");
+
+    const algoVal = document.getElementById("sel-algo").value;
+    const idx = algoVal === 'hill_climbing' ? 0 : 1;
+    compareChart.data.datasets[0].data[idx] = d.preference;
+    compareChart.data.datasets[1].data[idx] = d.accounting;
+    compareChart.data.datasets[2].data[idx] = d.score;
+    compareChart.data.datasets[3].data[idx] = runTimeSecs;
+    compareChart.update();
+
     document.getElementById("btn-run").disabled = false;
     document.getElementById("btn-stop").style.display = "none";
     document.getElementById("btn-dl").style.display = "inline-block";
