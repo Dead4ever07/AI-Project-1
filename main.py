@@ -18,9 +18,6 @@ MAX_OCCUPANCY = 300
 MIN_OCCUPANCY = 125
 
 
-# ================================
-# MAIN
-# ================================
 def main():
     run_algorithms(DATA_FILE, SUBMISSION_FILE, OUTPUT_DIR, N_DAYS, MIN_OCCUPANCY, MAX_OCCUPANCY)
 

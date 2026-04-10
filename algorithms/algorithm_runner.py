@@ -1,10 +1,6 @@
 import pandas as pd
 from algorithms import hill_climbing, simulated_annealing, genetic_algorithm
 
-
-# ================================
-# LOAD DATA
-# ================================
 def load_data(data_file, submission_file):
     data = pd.read_csv(data_file, index_col="family_id")
     submission = pd.read_csv(submission_file, index_col="family_id")
@@ -18,9 +14,6 @@ def prepare_arrays(data):
     return family_size, choices
 
 
-# ================================
-# RUN ALGORITHMS
-# ================================
 def run_algorithms(
     data_file, submission_file, output_dir, n_days, min_occupancy, max_occupancy
 ):
@@ -28,6 +21,8 @@ def run_algorithms(
     family_size, choices = prepare_arrays(data)
 
     algorithms = [
+        ("hill_climbing", hill_climbing.run),
+        ("simulated_annealing", simulated_annealing.run),
         ("genetic_algorithm", genetic_algorithm.run)
     ]
 
