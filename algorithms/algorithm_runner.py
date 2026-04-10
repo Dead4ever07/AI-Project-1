@@ -21,8 +21,8 @@ def run_algorithms(
     family_size, choices = prepare_arrays(data)
 
     algorithms = [
-        ("hill_climbing", hill_climbing.run),
-        ("simulated_annealing", simulated_annealing.run),
+        # ("hill_climbing", hill_climbing.run),
+        # ("simulated_annealing", simulated_annealing.run),
         ("genetic_algorithm", genetic_algorithm.run)
     ]
 

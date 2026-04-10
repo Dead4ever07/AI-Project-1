@@ -1,475 +1,172 @@
+"""
+Simple Genetic Algorithm for family-day scheduling.
+
+Each "individual" is an array mapping every family to a day.
+We evolve a population of individuals over generations to minimise total cost
+(preference penalties + accounting cost), keeping each day within occupancy bounds.
+"""
+
 import numpy as np
-from algorithms.cost import (
-    build_daily_occupancy,
-    cost_function,
-    delta_cost,
-    total_accounting_cost,
-)
+from algorithms.cost import build_daily_occupancy, cost_function, delta_cost, total_accounting_cost
 
-POPULATION_SIZE = 20
-N_GENERATIONS = 500
-TOURNAMENT_SIZE = 3
-CROSSOVER_RATE = 0.80
-MUTATION_RATE = 0.04
-ELITE_COUNT = 2
-PLATEAU_LIMIT = 40
-LOCAL_SEARCH_EVERY = 5 
+# --- Settings ---
+POPULATION_SIZE    = 20
+N_GENERATIONS      = 500
+MUTATION_RATE      = 0.04   # per-family chance of moving to a random preferred day
+ELITE_COUNT        = 5      # best individuals carried unchanged to the next generation
+PLATEAU_LIMIT      = 20     # stop if best score hasn't improved for this many generations
+LOCAL_SEARCH_EVERY = 2      # polish the best individual every N generations
+
+# Penalty for each preference rank (0 = top choice, 10 = not in top-10).
+# Format: (flat_fee, per_member_fee)
+PENALTIES = [
+    (0, 0), (50, 0), (50, 9), (100, 9), (200, 9),
+    (200, 18), (300, 18), (300, 36), (400, 36), (500, 235), (500, 434),
+]
 
 
-def _score_from_occupancy(
-    assignment,
-    daily_occupancy,
-    family_size,
-    choices,
-    n_days,
-    min_occupancy,
-    max_occupancy,
-):
-    """
-    Score an individual given its already-computed daily_occupancy.
-    Returns float('inf') if any occupancy constraint is violated.
-    O(n_families) preference penalty + O(n_days) accounting cost.
-    """
-    occ = daily_occupancy[1:]
-    if np.any(occ > max_occupancy) or np.any(occ < min_occupancy):
-        return float("inf")
+def _score(assignment, family_size, choices, n_days, min_occ, max_occ):
+    """Score an assignment. Returns inf if any day is over/under capacity."""
+    occ = build_daily_occupancy(assignment, family_size, n_days)
+    if np.any(occ[1:] > max_occ) or np.any(occ[1:] < min_occ):
+        return float("inf"), occ
 
-    PENALTIES = [
-        (0, 0),
-        (50, 0),
-        (50, 9),
-        (100, 9),
-        (200, 9),
-        (200, 18),
-        (300, 18),
-        (300, 36),
-        (400, 36),
-        (500, 235),
-        (500, 434),
-    ]
-    penalty = 0.0
-    for fam_id, day in enumerate(assignment):
-        n = family_size[fam_id]
-        rank = 10
-        for r in range(10):
-            if choices[fam_id, r] == day:
-                rank = r
-                break
+    preference_cost = 0.0
+    for fam, day in enumerate(assignment):
+        rank = next((r for r in range(10) if choices[fam, r] == day), 10)
         flat, per_member = PENALTIES[rank]
-        penalty += flat + per_member * n
+        preference_cost += flat + per_member * family_size[fam]
 
-    acc_cost = total_accounting_cost(daily_occupancy, n_days, min_occupancy)
-    return penalty + acc_cost
-
-
-# ================================
-# POPULATION INITIALISATION
-# ================================
-
-
-def _build_individual(
-    base_assignment,
-    family_size,
-    choices,
-    n_days,
-    min_occupancy,
-    max_occupancy,
-    rng,
-    perturbation,
-):
-    """
-    Build a valid individual in O(n_families) without any repair loop.
-    Returns (assignment, daily_occupancy).
-    """
-    n_families = len(base_assignment)
-    daily_occupancy = np.zeros(n_days + 1, dtype=np.int32)
-    assignment = np.empty(n_families, dtype=base_assignment.dtype)
-
-    for fam_id in rng.permutation(n_families):
-        n = family_size[fam_id]
-        pref = choices[fam_id].copy()
-        if rng.random() < perturbation:
-            rng.shuffle(pref)
-
-        placed = False
-        for day in pref:
-            if daily_occupancy[day] + n <= max_occupancy:
-                daily_occupancy[day] += n
-                assignment[fam_id] = day
-                placed = True
-                break
-
-        if not placed:
-            best = pref[int(np.argmin([daily_occupancy[d] for d in pref]))]
-            daily_occupancy[best] += n
-            assignment[fam_id] = best
-
-    # Fix under-occupied days cheaply
-    for day in range(1, n_days + 1):
-        attempts = 0
-        while daily_occupancy[day] < min_occupancy and attempts < n_families:
-            attempts += 1
-            donor = int(np.argmax(daily_occupancy[1:]) + 1)
-            if donor == day:
-                break
-            for fam_id in range(n_families):
-                if assignment[fam_id] == donor:
-                    n = family_size[fam_id]
-                    if daily_occupancy[donor] - n >= min_occupancy:
-                        daily_occupancy[donor] -= n
-                        daily_occupancy[day] += n
-                        assignment[fam_id] = day
-                        break
-            else:
-                break
-
-    return assignment, daily_occupancy
-
-
-def _init_population(
-    base_assignment, family_size, choices, n_days, min_occupancy, max_occupancy, rng
-):
-    population = []
-    occupancies = []
-    fitness = []
-
-    occ0 = build_daily_occupancy(base_assignment, family_size, n_days)
-    score0 = _score_from_occupancy(
-        base_assignment,
-        occ0,
-        family_size,
-        choices,
-        n_days,
-        min_occupancy,
-        max_occupancy,
-    )
-    population.append(base_assignment.copy())
-    occupancies.append(occ0)
-    fitness.append(score0)
-
-    for i in range(1, POPULATION_SIZE):
-        perturbation = 0.15 + 0.70 * (i / POPULATION_SIZE)
-        ind, occ = _build_individual(
-            base_assignment,
-            family_size,
-            choices,
-            n_days,
-            min_occupancy,
-            max_occupancy,
-            rng,
-            perturbation,
-        )
-        score = _score_from_occupancy(
-            ind, occ, family_size, choices, n_days, min_occupancy, max_occupancy
-        )
-        population.append(ind)
-        occupancies.append(occ)
-        fitness.append(score)
-
-    return population, occupancies, fitness
-
-
-# ================================
-# SELECTION
-# ================================
-
-
-def _tournament_select(population, occupancies, fitness, rng):
-    idx = rng.integers(0, len(population), size=TOURNAMENT_SIZE)
-    best_i = idx[int(np.argmin([fitness[i] for i in idx]))]
-    return population[best_i].copy(), occupancies[best_i].copy()
-
-
-# ================================
-# CROSSOVER — occupancy-aware, no repair needed
-# ================================
-
-
-def _crossover(
-    parent_a,
-    occ_a,
-    parent_b,
-    occ_b,
-    family_size,
-    choices,
-    n_days,
-    min_occupancy,
-    max_occupancy,
-    rng,
-):
-    n_families = len(parent_a)
-    daily_occupancy = np.zeros(n_days + 1, dtype=np.int32)
-    child = np.empty(n_families, dtype=parent_a.dtype)
-    prefer_a = rng.integers(0, 2, size=n_families).astype(bool)
-
-    for fam_id in rng.permutation(n_families):
-        n = family_size[fam_id]
-        first = parent_a[fam_id] if prefer_a[fam_id] else parent_b[fam_id]
-        second = parent_b[fam_id] if prefer_a[fam_id] else parent_a[fam_id]
-
-        placed = False
-        for day in (first, second):
-            if daily_occupancy[day] + n <= max_occupancy:
-                daily_occupancy[day] += n
-                child[fam_id] = day
-                placed = True
-                break
-
-        if not placed:
-            for day in choices[fam_id]:
-                if daily_occupancy[day] + n <= max_occupancy:
-                    daily_occupancy[day] += n
-                    child[fam_id] = day
-                    placed = True
-                    break
-
-        if not placed:
-            best = choices[
-                fam_id, int(np.argmin([daily_occupancy[d] for d in choices[fam_id]]))
-            ]
-            daily_occupancy[best] += n
-            child[fam_id] = best
-
-    return child, daily_occupancy
-
-
-# ================================
-# MUTATION — inline occupancy update, no rebuild
-# ================================
-
-
-def _mutate(
-    individual,
-    daily_occupancy,
-    family_size,
-    choices,
-    n_days,
-    min_occupancy,
-    max_occupancy,
-    rng,
-):
-    mutant = individual.copy()
-    occ = daily_occupancy.copy()
-
-    for fam_id in range(len(mutant)):
-        if rng.random() >= MUTATION_RATE:
-            continue
-        n = family_size[fam_id]
-        old_day = mutant[fam_id]
-        new_day = choices[fam_id, rng.integers(0, 10)]
-        if new_day == old_day:
-            continue
-        if occ[old_day] - n >= min_occupancy and occ[new_day] + n <= max_occupancy:
-            occ[old_day] -= n
-            occ[new_day] += n
-            mutant[fam_id] = new_day
-
-    return mutant, occ
-
-
-# ================================
-# LOCAL SEARCH — one greedy pass, called sparingly
-# ================================
-
-
-def _local_search_pass(
-    assignment, family_size, choices, n_days, min_occupancy, max_occupancy, rng
-):
-    result = cost_function(
-        assignment, family_size, choices, n_days, min_occupancy, max_occupancy
-    )
-    if result is None:
-        return assignment
-
-    preference_penalty, accounting_cost = result
-    daily_occupancy = build_daily_occupancy(assignment, family_size, n_days)
-
-    for fam_id in rng.permutation(len(assignment)):
-        old_day = assignment[fam_id]
-        for rank in range(10):
-            new_day = choices[fam_id, rank]
-            if new_day == old_day:
-                continue
-            res = delta_cost(
-                fam_id,
-                old_day,
-                new_day,
-                accounting_cost,
-                daily_occupancy,
-                family_size,
-                choices,
-                n_days,
-                min_occupancy,
-                max_occupancy,
-            )
-            if res is None:
-                continue
-            pd, ad = res
-            if pd + ad < 0:
-                daily_occupancy[old_day] -= family_size[fam_id]
-                daily_occupancy[new_day] += family_size[fam_id]
-                assignment[fam_id] = new_day
-                preference_penalty += pd
-                accounting_cost += ad
-                old_day = new_day
-                break
-
-    return assignment
-
-
-# ================================
-# MAIN ENTRY POINT
-# ================================
+    return preference_cost + total_accounting_cost(occ, n_days, min_occ), occ
 
 
 def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
-    base_assignment = submission["assigned_day"].values.copy()
+    min_occ, max_occ = min_occupancy, max_occupancy
+    base = submission["assigned_day"].values.copy()
+    rng  = np.random.default_rng()
 
-    result = cost_function(
-        base_assignment, family_size, choices, n_days, min_occupancy, max_occupancy
-    )
+    result = cost_function(base, family_size, choices, n_days, min_occ, max_occ)
     if result is None:
         raise ValueError("Starting solution is invalid!")
-    pref_pen, acc_cost = result
-    print(
-        f"Initial score: {pref_pen + acc_cost:.2f}  "
-        f"(preference: {pref_pen:.2f}  accounting: {acc_cost:.2f})"
-    )
+    print(f"Initial score: {sum(result):.2f}")
 
-    rng = np.random.default_rng()
+    # --- Build initial population ---
+    # First individual is the original submission; the rest are increasingly shuffled variants.
+    population = []
+    for i in range(POPULATION_SIZE):
+        assignment = base.copy()
+        shuffle_prob = 0.0 if i == 0 else 0.15 + 0.70 * (i / POPULATION_SIZE)
+        occ = np.zeros(n_days + 1, dtype=np.int32)
 
-    print(f"Initialising population of {POPULATION_SIZE}...")
-    population, occupancies, fitness = _init_population(
-        base_assignment, family_size, choices, n_days, min_occupancy, max_occupancy, rng
-    )
-
-    best_idx = int(np.argmin(fitness))
-    best_score = fitness[best_idx]
-    best_assignment = population[best_idx].copy()
-    scores_trajectory = [[0, best_score]]
-    print(f"Initial population best score: {best_score:.2f}")
-
-    no_improve = 0
-
-    for generation in range(1, N_GENERATIONS + 1):
-
-        # Elitism
-        elite_order = np.argsort(fitness)[:ELITE_COUNT]
-        new_pop = [population[i].copy() for i in elite_order]
-        new_occ = [occupancies[i].copy() for i in elite_order]
-        new_fit = [fitness[i] for i in elite_order]
-
-        while len(new_pop) < POPULATION_SIZE:
-            if rng.random() < CROSSOVER_RATE:
-                pa, oa = _tournament_select(population, occupancies, fitness, rng)
-                pb, ob = _tournament_select(population, occupancies, fitness, rng)
-                child, child_occ = _crossover(
-                    pa,
-                    oa,
-                    pb,
-                    ob,
-                    family_size,
-                    choices,
-                    n_days,
-                    min_occupancy,
-                    max_occupancy,
-                    rng,
-                )
+        for fam in rng.permutation(len(base)):
+            n     = family_size[fam]
+            prefs = choices[fam].copy()
+            if rng.random() < shuffle_prob:
+                rng.shuffle(prefs)
+            for day in prefs:
+                if occ[day] + n <= max_occ:
+                    break
             else:
-                child, child_occ = _tournament_select(
-                    population, occupancies, fitness, rng
-                )
+                day = prefs[np.argmin([occ[d] for d in prefs])]
+            occ[day] += n
+            assignment[fam] = day
 
-            child, child_occ = _mutate(
-                child,
-                child_occ,
-                family_size,
-                choices,
-                n_days,
-                min_occupancy,
-                max_occupancy,
-                rng,
-            )
-            score = _score_from_occupancy(
-                child,
-                child_occ,
-                family_size,
-                choices,
-                n_days,
-                min_occupancy,
-                max_occupancy,
-            )
-            new_pop.append(child)
-            new_occ.append(child_occ)
-            new_fit.append(score)
+        score, occ = _score(assignment, family_size, choices, n_days, min_occ, max_occ)
+        population.append((assignment, occ, score))
 
-        population = new_pop
-        occupancies = new_occ
-        fitness = new_fit
+    population.sort(key=lambda x: x[2])
+    best_assignment, _, best_score = population[0]
+    best_assignment = best_assignment.copy()
+    score_history = [[0, best_score]]
+    no_improve = 0
+    print(f"Initial population best: {best_score:.2f}")
 
-        # Periodic single-pass local search on best
-        if generation % LOCAL_SEARCH_EVERY == 0:
-            bi = int(np.argmin(fitness))
-            polished = _local_search_pass(
-                population[bi].copy(),
-                family_size,
-                choices,
-                n_days,
-                min_occupancy,
-                max_occupancy,
-                rng,
-            )
-            pol_occ = build_daily_occupancy(polished, family_size, n_days)
-            pol_score = _score_from_occupancy(
-                polished,
-                pol_occ,
-                family_size,
-                choices,
-                n_days,
-                min_occupancy,
-                max_occupancy,
-            )
-            if pol_score < fitness[bi]:
-                population[bi] = polished
-                occupancies[bi] = pol_occ
-                fitness[bi] = pol_score
+    # --- Evolve ---
+    for gen in range(1, N_GENERATIONS + 1):
 
-        gen_best_i = int(np.argmin(fitness))
-        gen_best_score = fitness[gen_best_i]
-        valid_scores = [f for f in fitness if f < float("inf")]
-        avg_score = float(np.mean(valid_scores)) if valid_scores else float("inf")
-        valid_count = len(valid_scores)
+        # Keep the best ELITE_COUNT individuals, breed the rest
+        next_gen = [ind for ind in population[:ELITE_COUNT]]
 
-        if gen_best_score < best_score:
-            best_score = gen_best_score
-            best_assignment = population[gen_best_i].copy()
-            scores_trajectory.append([generation, best_score])
-            no_improve = 0
-            marker = "  *** NEW BEST ***"
-        else:
-            no_improve += 1
-            marker = ""
+        while len(next_gen) < POPULATION_SIZE:
+            # Crossover: pick two parents randomly from the top half, combine them
+            pa, _, _ = population[rng.integers(0, POPULATION_SIZE // 2)]
+            pb, _, _ = population[rng.integers(0, POPULATION_SIZE // 2)]
+            occ   = np.zeros(n_days + 1, dtype=np.int32)
+            child = np.empty(len(pa), dtype=pa.dtype)
 
+            for fam in rng.permutation(len(pa)):
+                n    = family_size[fam]
+                days = ([pa[fam], pb[fam]] if rng.random() < 0.5 else [pb[fam], pa[fam]]) + list(choices[fam])
+                for day in days:
+                    if occ[day] + n <= max_occ:
+                        break
+                else:
+                    day = choices[fam, np.argmin([occ[d] for d in choices[fam]])]
+                occ[day] += n
+                child[fam] = day
+
+            # Mutation: randomly move a few families to a different preferred day
+            for fam in range(len(child)):
+                if rng.random() >= MUTATION_RATE:
+                    continue
+                n = family_size[fam]
+                old_day, new_day = child[fam], choices[fam, rng.integers(0, 10)]
+                if new_day != old_day and occ[old_day] - n >= min_occ and occ[new_day] + n <= max_occ:
+                    occ[old_day] -= n
+                    occ[new_day] += n
+                    child[fam] = new_day
+
+            score, occ = _score(child, family_size, choices, n_days, min_occ, max_occ)
+            next_gen.append((child, occ, score))
+
+        population = sorted(next_gen, key=lambda x: x[2])
+
+        # Periodically improve the best individual with a greedy local search
+        if gen % LOCAL_SEARCH_EVERY == 0:
+            best, best_occ, best_gen_score = population[0]
+            pref_cost, acc_cost = cost_function(best, family_size, choices, n_days, min_occ, max_occ) or (0, 0)
+            occ = build_daily_occupancy(best, family_size, n_days)
+
+            for fam in rng.permutation(len(best)):
+                old_day = best[fam]
+                for rank in range(10):
+                    new_day = choices[fam, rank]
+                    if new_day == old_day:
+                        continue
+                    delta = delta_cost(fam, old_day, new_day, acc_cost, occ, family_size, choices, n_days, min_occ, max_occ)
+                    if delta is not None and sum(delta) < 0:
+                        occ[old_day] -= family_size[fam]
+                        occ[new_day] += family_size[fam]
+                        best[fam] = new_day
+                        pref_cost += delta[0]
+                        acc_cost  += delta[1]
+                        old_day = new_day
+                        break
+
+            polished_score = pref_cost + acc_cost
+            if polished_score < best_gen_score:
+                population[0] = (best, occ, polished_score)
+
+        # Logging and plateau detection
+        gen_best = population[0][2]
+        valid    = [s for _, _, s in population if s < float("inf")]
         print(
-            f"Gen {generation:4d}: best={gen_best_score:.2f}  avg={avg_score:.2f}  "
-            f"valid={valid_count}/{POPULATION_SIZE}  global_best={best_score:.2f}  "
-            f"plateau={no_improve}/{PLATEAU_LIMIT}{marker}"
+            f"Gen {gen:4d}: best={gen_best:.2f}  avg={np.mean(valid):.2f}  "
+            f"plateau={no_improve}/{PLATEAU_LIMIT}"
+            + ("  *** NEW BEST ***" if gen_best < best_score else "")
         )
 
+        if gen_best < best_score:
+            best_score      = gen_best
+            best_assignment = population[0][0].copy()
+            score_history.append([gen, best_score])
+            no_improve = 0
+        else:
+            no_improve += 1
+
         if no_improve >= PLATEAU_LIMIT:
-            print(f"Stopping: no improvement for {PLATEAU_LIMIT} generations.")
+            print(f"Stopping early: no improvement for {PLATEAU_LIMIT} generations.")
             break
 
-    print("\nRunning final local search polish...")
-    best_assignment = _local_search_pass(
-        best_assignment, family_size, choices, n_days, min_occupancy, max_occupancy, rng
-    )
-    result = cost_function(
-        best_assignment, family_size, choices, n_days, min_occupancy, max_occupancy
-    )
-    if result is not None:
-        best_score = result[0] + result[1]
-        scores_trajectory.append([N_GENERATIONS + 1, best_score])
-
     print(f"\nBest score found: {best_score:.2f}")
-    return best_assignment, best_score, scores_trajectory
+    return best_assignment, best_score, score_history
