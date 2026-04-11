@@ -90,6 +90,8 @@
             <select id="sel-algo" class="form-select form-select-sm">
               <option value="hill_climbing">Hill Climbing</option>
               <option value="simulated_annealing">Simulated Annealing</option>
+              <option value="lp_solution">LP Solution</option>
+              <option value="hybrid">Hybrid (LP + Hill Climbing)</option>
             </select>
           </div>
 
@@ -265,26 +267,26 @@ const ctxCompare = document.getElementById("chart-compare").getContext("2d");
 const compareChart = new Chart(ctxCompare, {
   type: 'bar',
   data: {
-    labels: ['Hill Climbing', 'Simulated Annealing'],
+    labels: ['Hill Climbing', 'Simulated Annealing', 'LP Solution', 'Hybrid'],
     datasets: [
       {
         label: 'Pref Penalty',
-        data: [null, null],
+        data: [null, null, null,null],
         backgroundColor: '#f39c12',
       },
       {
         label: 'Acc Cost',
-        data: [null, null],
+        data: [null, null, null,null],
         backgroundColor: '#e74c3c',
       },
       {
         label: 'Total Cost',
-        data: [null, null],
+        data: [null, null, null,null],
         backgroundColor: '#4c9be8',
       },
       {
         label: 'Run Time (s)',
-        data: [null, null],
+        data: [null, null, null,null],
         backgroundColor: '#9b59b6',
       }
     ]
@@ -408,7 +410,7 @@ function handleEvent(ev) {
     setStatus("done");
 
     const algoVal = document.getElementById("sel-algo").value;
-    const idx = algoVal === 'hill_climbing' ? 0 : 1;
+    const idx = algoVal === 'hill_climbing' ? 0 : (algoVal === 'simulated_annealing' ? 1 : 2);
     compareChart.data.datasets[0].data[idx] = d.preference;
     compareChart.data.datasets[1].data[idx] = d.accounting;
     compareChart.data.datasets[2].data[idx] = d.score;

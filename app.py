@@ -125,12 +125,25 @@ def run_algorithm():
                 hill_climbing._stop = False
                 _active_module = hill_climbing
                 result = hill_climbing.run(sub, family_size, choices, n_days, min_occ, max_occ)
-            else:
+            elif algorithm == "lp_solution":
+                from algorithms import lp_solution
+                lp_solution._callback = _emit
+                lp_solution._stop = False
+                _active_module = lp_solution
+                result = lp_solution.run(sub, family_size, choices, n_days, min_occ, max_occ)
+            elif algorithm == "simulated_annealing":
                 from algorithms import simulated_annealing
                 simulated_annealing._callback = _emit
                 simulated_annealing._stop = False
                 _active_module = simulated_annealing
                 result = simulated_annealing.run(sub, family_size, choices, n_days, min_occ, max_occ)
+            elif algorithm == "hybrid":
+                from algorithms import hybrid_solution
+                hybrid_solution._callback = _emit
+                hybrid_solution._stop = False
+                _active_module = hybrid_solution
+                result = hybrid_solution.run(sub, family_size, choices, n_days, min_occ, max_occ)                
+
 
             assignment = result[0]
             with _state_lock:

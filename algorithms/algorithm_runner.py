@@ -1,14 +1,27 @@
 import pandas as pd
 from algorithms import hill_climbing
 from algorithms import simulated_annealing
+from algorithms import lp_solution
+from algorithms import hybrid_solution
 
 
 # ================================
 # LOAD DATA
 # ================================
 def load_data(data_file, submission_file):
-    data = pd.read_csv(data_file, index_col="family_id")
-    submission = pd.read_csv(submission_file, index_col="family_id")
+    # Data file has metadata in first 2 rows
+    data = pd.read_csv(data_file, index_col="family_id", skiprows=2)
+    
+    # Submission file (like sample_submission.csv) usually does NOT have metadata
+    # We check if it has "family_id" in the first line
+    with open(submission_file, 'r') as f:
+        first_line = f.readline()
+    
+    if "family_id" in first_line:
+        submission = pd.read_csv(submission_file, index_col="family_id")
+    else:
+        submission = pd.read_csv(submission_file, index_col="family_id", skiprows=2)
+        
     return data, submission
 
 
@@ -29,7 +42,8 @@ def run_algorithms(
     family_size, choices = prepare_arrays(data)
 
     algorithms = [
-
+        ("lp_solution", lp_solution.run),
+        ("hybrid_solution", hybrid_solution.run),
         ("simulated_annealing", simulated_annealing.run),
     ]
 
