@@ -245,6 +245,13 @@ def _local_search(
     return assignment, occ, (pref_cost, acc_cost)
 
 
+_callback = None
+_stop = False
+
+def emit(ev: dict):
+    if _callback is not None:
+        _callback(ev)
+
 def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     """
     Run the genetic algorithm. Returns (best_assignment, best_score, score_history).
@@ -264,9 +271,13 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     result = cost_function(base, family_size, choices, n_days, min_occ, max_occ)
     if result is None:
         raise ValueError("Starting solution is invalid!")
+    
     print(
         f"Initial score: {sum(result):.2f}  (preference: {result[0]:.2f}  accounting: {result[1]:.2f})"
     )
+
+    emit({"type": "start", "score": sum(result),
+          "preference": result[0], "accounting": result[1]})
 
     rng = np.random.default_rng()
     pop, occs, costs = _init_population(
@@ -284,6 +295,9 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     print(f"Initial population best: {best_score:.2f}")
 
     for gen in range(1, N_GENERATIONS + 1):
+        if _stop:
+            print("Stopping: stop requested.")
+            break
 
         # Always carry the top ELITE_COUNT individuals into the next generation
         elite = np.argsort(scores)[:ELITE_COUNT]
@@ -293,6 +307,7 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
 
         # Fill the rest of the population with bred/mutated children
         while len(new_pop) < POPULATION_SIZE:
+            if _stop: break
             if rng.random() < CROSSOVER_RATE:
                 pa, oa, ca = _tournament_select(pop, occs, costs, rng)
                 pb, ob, cb = _tournament_select(pop, occs, costs, rng)
@@ -327,6 +342,8 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
             new_pop.append(child)
             new_occs.append(child_occ)
             new_costs.append(child_cost)
+
+        if _stop: break
 
         pop, occs, costs = new_pop, new_occs, new_costs
         scores = [_total_score(*c) for c in costs]
@@ -365,6 +382,10 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
             + ("  *** NEW BEST ***" if gen_best < best_score else "")
         )
 
+        emit({"type": "iteration", "score": gen_best, "best_score": best_score,
+              "preference": costs[gen_best_idx][0], "accounting": costs[gen_best_idx][1],
+              "iteration": gen, "improvements": 0 if gen_best >= best_score else 1})
+
         if gen_best < best_score:
             best_score = gen_best
             best_assignment = pop[gen_best_idx].copy()
@@ -380,20 +401,25 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
             break
 
     # Final polish on the overall best solution
-    print("\nRunning final local search polish...")
-    best_assignment, best_occ, best_cost = _local_search(
-        best_assignment,
-        best_occ,
-        best_cost,
-        family_size,
-        choices,
-        n_days,
-        min_occ,
-        max_occ,
-        rng,
-    )
-    best_score = _total_score(*best_cost)
-    score_history.append([N_GENERATIONS + 1, best_score])
+    if not _stop:
+        print("\nRunning final local search polish...")
+        best_assignment, best_occ, best_cost = _local_search(
+            best_assignment,
+            best_occ,
+            best_cost,
+            family_size,
+            choices,
+            n_days,
+            min_occ,
+            max_occ,
+            rng,
+        )
+        best_score = _total_score(*best_cost)
+        score_history.append([N_GENERATIONS + 1, best_score])
+
+    emit({"type": "done", "score": best_score,
+          "preference": best_cost[0], "accounting": best_cost[1],
+          "occupancy": best_occ.tolist(), "assignment": best_assignment.tolist()})
 
     print(f"\nBest score found: {best_score:.2f}")
     return best_assignment, best_score, score_history

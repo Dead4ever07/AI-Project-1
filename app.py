@@ -143,7 +143,12 @@ def run_algorithm():
                 hybrid_solution._stop = False
                 _active_module = hybrid_solution
                 result = hybrid_solution.run(sub, family_size, choices, n_days, min_occ, max_occ)                
-
+            elif algorithm == "genetic":
+                from algorithms import genetic_algorithm
+                genetic_algorithm._callback = _emit
+                genetic_algorithm._stop = False
+                _active_module = genetic_algorithm
+                result = genetic_algorithm.run(sub, family_size, choices, n_days, min_occ, max_occ)          
 
             assignment = result[0]
             with _state_lock:
