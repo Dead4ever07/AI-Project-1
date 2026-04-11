@@ -76,13 +76,7 @@
           <div class="mb-3">
             <label class="form-label">Family data CSV</label>
             <select id="sel-data" class="form-select form-select-sm">
-              {% for f in data_files %}<option>{{ f }}</option>{% endfor %}
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Submission CSV</label>
-            <select id="sel-sub" class="form-select form-select-sm">
-              {% for f in sub_files %}<option>{{ f }}</option>{% endfor %}
+              {% for val, lbl in data_files %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}
             </select>
           </div>
           <div class="mb-3">
@@ -151,14 +145,14 @@
   <div class="row g-3 mb-3">
     <div class="col-md-6">
       <div class="card">
-        <div class="card-header">Total Cost over Iterations</div>
-        <div class="card-body" style="padding:12px"><canvas id="chart-cost"></canvas></div>
+        <div class="card-header">Costs</div>
+        <div class="card-body" style="padding:12px"><canvas id="chart-cost" style="max-height: 250px;"></canvas></div>
       </div>
     </div>
     <div class="col-md-6">
       <div class="card">
-        <div class="card-header">Preference vs Accounting Breakdown</div>
-        <div class="card-body" style="padding:12px"><canvas id="chart-breakdown"></canvas></div>
+        <div class="card-header">Runtime Comparison (seconds)</div>
+        <div class="card-body" style="padding:12px"><canvas id="chart-runtime" style="max-height: 250px;"></canvas></div>
       </div>
     </div>
   </div>
@@ -222,9 +216,19 @@ const costChart = new Chart(ctxCost, {
       pointRadius: 2,
       borderWidth: 2
     }, {
-      label: "Best Cost (SA)",
+      label: "Preference Penalty",
       data: [],
-      borderColor: "#2ecc71",
+      borderColor: "#f39c12",
+      backgroundColor: "transparent",
+      fill: false,
+      tension: 0.3,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      borderDash: [4, 3]
+    }, {
+      label: "Accounting Cost",
+      data: [],
+      borderColor: "#e74c3c",
       backgroundColor: "transparent",
       fill: false,
       tension: 0.3,
@@ -233,35 +237,17 @@ const costChart = new Chart(ctxCost, {
       borderDash: [4, 3]
     }]
   },
-  options: { ...chartDefaults }
-});
-
-const ctxBd =document.getElementById("chart-breakdown").getContext("2d");
-const bdChart = new Chart(ctxBd, {
-  type: "line",
-  data: {
-    labels: [],
-    datasets: [{
-      label: "Preference Penalty",
-      data: [],
-      borderColor: "#f39c12",
-      backgroundColor: "rgba(243,156,18,.1)",
-      fill: true,
-      tension: 0.3,
-      pointRadius: 0,
-      borderWidth: 2
-    }, {
-      label: "Accounting Cost",
-      data: [],
-      borderColor: "#e74c3c",
-      backgroundColor: "rgba(231,76,60,.1)",
-      fill: true,
-      tension: 0.3,
-      pointRadius: 0,
-      borderWidth: 2
-    }]
-  },
-  options: { ...chartDefaults }
+  options: { 
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      y: { 
+        type: 'logarithmic',
+        ticks: { color: "#8892a4" }, 
+        grid: { color: "#2e3340" } 
+      }
+    }
+  }
 });
 
 const ctxCompare = document.getElementById("chart-compare").getContext("2d");
@@ -271,24 +257,19 @@ const compareChart = new Chart(ctxCompare, {
     labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm','LP Solution', 'Hybrid'],
     datasets: [
       {
-        label: 'Pref Penalty',
-        data: [null, null, null, null, null],
-        backgroundColor: '#f39c12',
-      },
-      {
-        label: 'Acc Cost',
-        data: [null, null, null, null, null],
-        backgroundColor: '#e74c3c',
-      },
-      {
         label: 'Total Cost',
         data: [null, null, null, null, null],
         backgroundColor: '#4c9be8',
       },
       {
-        label: 'Run Time (s)',
+        label: 'Preference Penalty',
         data: [null, null, null, null, null],
-        backgroundColor: '#9b59b6',
+        backgroundColor: '#f39c12',
+      },
+      {
+        label: 'Accounting Cost',
+        data: [null, null, null, null, null],
+        backgroundColor: '#e74c3c',
       }
     ]
   },
@@ -296,10 +277,30 @@ const compareChart = new Chart(ctxCompare, {
     ...chartDefaults,
     scales: {
       x: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } },
-      y: { type: 'logarithmic', ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } }
+      y: { type: 'linear', ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } }
     },
     plugins: {
       legend: { labels: { color: "#e8eaf0", font: { size: 10 } } }
+    }
+  }
+});
+
+const ctxRuntime = document.getElementById("chart-runtime").getContext("2d");
+const runtimeChart = new Chart(ctxRuntime, {
+  type: 'bar',
+  data: {
+    labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm','LP Solution', 'Hybrid'],
+    datasets: [{
+      label: 'Runtime (s)',
+      data: [null, null, null, null, null],
+      backgroundColor: '#9b59b6',
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      x: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } },
+      y: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } }
     }
   }
 });
@@ -309,8 +310,10 @@ let iteration = 0;
 let startTime = 0;
 
 document.getElementById("sel-data").addEventListener("change", () => {
-  compareChart.data.datasets.forEach(ds => ds.data = [null, null]);
+  compareChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null]);
   compareChart.update();
+  runtimeChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null]);
+  runtimeChart.update();
 });
 
 let chartOccupancy = null;
@@ -342,22 +345,22 @@ function pushData(iter, score, bestScore, pref, acc) {
   const lbl = String(iter);
   costChart.data.labels.push(lbl);
   costChart.data.datasets[0].data.push(score);
-  costChart.data.datasets[1].data.push(bestScore != null ? bestScore : null);
-  costChart.update("none");
+  costChart.data.datasets[1].data.push(pref);
+  costChart.data.datasets[2].data.push(acc);
 
-  bdChart.data.labels.push(lbl);
-  bdChart.data.datasets[0].data.push(pref);
-  bdChart.data.datasets[1].data.push(acc);
-  bdChart.update("none");
+  if (costChart.data.labels.length > 100) {
+    costChart.data.labels.shift();
+    costChart.data.datasets[0].data.shift();
+    costChart.data.datasets[1].data.shift();
+    costChart.data.datasets[2].data.shift();
+  }
+  costChart.update("none");
 }
 
 function resetCharts() {
   costChart.data.labels.length = 0;
   costChart.data.datasets.forEach(d => d.data.length = 0);
   costChart.update();
-  bdChart.data.labels.length = 0;
-  bdChart.data.datasets.forEach(d => d.data.length = 0);
-  bdChart.update();
   iteration = 0;
   document.getElementById("stat-total").textContent = "—";
   document.getElementById("stat-pref").textContent  = "—";
@@ -414,15 +417,17 @@ function handleEvent(ev) {
     let idx = 0;
     if (algoVal === 'hill_climbing') idx = 0;
     else if (algoVal === 'simulated_annealing') idx = 1;
-    else if (algoVal == 'genetic') idx = 2;
+    else if (algoVal === 'genetic') idx = 2;
     else if (algoVal === 'lp_solution') idx = 3;
     else if (algoVal === 'hybrid') idx = 4;
     
-    compareChart.data.datasets[0].data[idx] = d.preference;
-    compareChart.data.datasets[1].data[idx] = d.accounting;
-    compareChart.data.datasets[2].data[idx] = d.score;
-    compareChart.data.datasets[3].data[idx] = runTimeSecs;
+    compareChart.data.datasets[0].data[idx] = d.score;
+    compareChart.data.datasets[1].data[idx] = d.preference;
+    compareChart.data.datasets[2].data[idx] = d.accounting;
     compareChart.update();
+
+    runtimeChart.data.datasets[0].data[idx] = runTimeSecs;
+    runtimeChart.update();
 
     document.getElementById("btn-run").disabled = false;
     document.getElementById("btn-stop").style.display = "none";
@@ -536,8 +541,7 @@ function handleEvent(ev) {
   }
 }
 
-if (!document.getElementById("sel-data").options.length ||
-    !document.getElementById("sel-sub").options.length) {
+if (!document.getElementById("sel-data").options.length) {
   document.getElementById("input-warning").style.display = "block";
   document.getElementById("btn-run").disabled = true;
 }
@@ -554,7 +558,6 @@ document.getElementById("btn-run").addEventListener("click", async () => {
 
   const body = {
     data_file: document.getElementById("sel-data").value,
-    sub_file:  document.getElementById("sel-sub").value,
     algorithm: document.getElementById("sel-algo").value,
   };
 

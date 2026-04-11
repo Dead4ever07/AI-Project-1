@@ -3,17 +3,14 @@ from algorithms import hill_climbing, simulated_annealing, genetic_algorithm, lp
 
 
 def load_data(data_file, submission_file):
-    # Data file has 2 rows of metadata: number_days, max_occupancy, min_occupancy
-    # The actual data starts on the 3rd row.
+    """Function responsible for fetching a dataset from data_file"""
     data = pd.read_csv(data_file, index_col="family_id", skiprows=2)
     
-    # Check if we should extract constraints from the metadata lines
     metadata = pd.read_csv(data_file, nrows=1)
     n_days = metadata.iloc[0, 0]
     max_occ = metadata.iloc[0, 1]
     min_occ = metadata.iloc[0, 2]
 
-    # Submission file (like sample_submission.csv) usually has headers on the first line
     submission = pd.read_csv(submission_file, index_col="family_id")
         
     return data, submission, (n_days, max_occ, min_occ)

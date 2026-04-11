@@ -48,25 +48,25 @@ def _emit(ev: dict):
     _run_queue.put(ev)
 
 
+def _format_label(filename):
+    name = filename.rsplit('.', 1)[0]
+    return name.replace('_', ' ').title()
+
 def _input_csvs():
     if not INPUT_DIR.exists():
-        return [], ["[Generate Initial Solution]"]
+        return []
     all_csv = sorted(p.name for p in INPUT_DIR.glob("*.csv"))
-    data_files = [n for n in all_csv if "submission" not in n.lower() and "sample" not in n.lower()]
-    sub_files  = [n for n in all_csv if "submission" in n.lower() or "sample" in n.lower()]
+    data_files = [(n, _format_label(n)) for n in all_csv if "submission" not in n.lower() and "sample" not in n.lower()]
     if not data_files:
-        data_files = all_csv
-    if not sub_files:
-        sub_files = all_csv
+        data_files = [(n, _format_label(n)) for n in all_csv]
         
-    sub_files.insert(0, "[Generate Initial Solution]")
-    return data_files, sub_files
+    return data_files
 
 
 @app.route("/")
 def index():
-    data_files, sub_files = _input_csvs()
-    return render_template("index.html", data_files=data_files, sub_files=sub_files)
+    data_files = _input_csvs()
+    return render_template("index.html", data_files=data_files)
 
 
 @app.route("/run", methods=["POST"])
@@ -79,11 +79,9 @@ def run_algorithm():
 
         body = request.get_json(force=True)
         data_name = body.get("data_file", "")
-        sub_name  = body.get("sub_file", "")
         algorithm = body.get("algorithm", "hill_climbing")
 
         data_path = INPUT_DIR / data_name
-        sub_path  = INPUT_DIR / sub_name if sub_name != "[Generate Initial Solution]" else None
 
         try:
             with open(data_path, "r") as f:
@@ -103,11 +101,8 @@ def run_algorithm():
             family_size = data["n_people"].values
             choices     = data[[f"choice_{i}" for i in range(10)]].values
             
-            if sub_name == "[Generate Initial Solution]":
-                from algorithms.initial_solution import generate_initial_solution
-                sub = generate_initial_solution(family_size, choices, n_days, min_occ, max_occ)
-            else:
-                sub = pd.read_csv(sub_path, index_col="family_id")
+            from algorithms.initial_solution import generate_initial_solution
+            sub = generate_initial_solution(family_size, choices, n_days, min_occ, max_occ)
                 
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
