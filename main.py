@@ -13,16 +13,11 @@ DATA_FILE = INPUT_DIR / "easy_input.csv"
 SUBMISSION_FILE = (
     INPUT_DIR / "easy_sample_sumbmission.csv"
 )
-N_DAYS = 100
-MAX_OCCUPANCY = 300
-MIN_OCCUPANCY = 125
 
 
-# ================================
-# MAIN
-# ================================
+
 def main():
-    run_algorithms(DATA_FILE, SUBMISSION_FILE, OUTPUT_DIR, N_DAYS, MIN_OCCUPANCY, MAX_OCCUPANCY)
+    run_algorithms(DATA_FILE, SUBMISSION_FILE, OUTPUT_DIR, None, None, None)
 
 if __name__ == "__main__":
     main()

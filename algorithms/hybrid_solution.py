@@ -14,9 +14,13 @@ def run(submission, family_size, choices, n_days, min_occ, max_occ):
     Hybrid approach: LP followed by Hill Climbing.
     """
     print("Starting Hybrid Approach (LP + Hill Climbing)...")
-    
+    lp_solution._callback = _callback
+    lp_solution._stop = False
     lp_assignment = lp_solution.generate_lp_solution(family_size, choices, n_days, min_occ, max_occ)
     
+    if _stop:
+        return lp_assignment, 0, []
+
     if isinstance(submission, pd.DataFrame):
         lp_submission = submission.copy()
         lp_submission["assigned_day"] = lp_assignment 
@@ -25,8 +29,10 @@ def run(submission, family_size, choices, n_days, min_occ, max_occ):
         lp_submission.index.name = "family_id"
 
     print("\nRefining LP solution with Hill Climbing...")
-    final_assignment, final_score = hill_climbing.run(
+    hill_climbing._callback = _callback
+    hill_climbing._stop = False
+    final_assignment, final_score, empty = hill_climbing.run(
         lp_submission, family_size, choices, n_days, min_occ, max_occ
     )
     
-    return final_assignment, final_score
+    return final_assignment, final_score, []

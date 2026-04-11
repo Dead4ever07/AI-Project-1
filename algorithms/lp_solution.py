@@ -144,6 +144,7 @@ def generate_lp_solution(family_size, choices, n_days, min_occ, max_occ):
 
     for under_d in underfilled_days:
         while occupancy[under_d] < min_occ:
+            if _stop: break
             moved = False
             for healthy_d in range(1, n_days + 1):
                 if occupancy[healthy_d] > min_occ:
@@ -187,4 +188,4 @@ def run(submission, family_size, choices, n_days, min_occ, max_occ):
         
     emit({"type": "done", "score": score, "preference": pref, "accounting": acc, "iteration": 1})
         
-    return assigned_days, score
+    return assigned_days, score, []

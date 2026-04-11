@@ -110,4 +110,4 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
           "preference": preference_penalty, "accounting": accounting_cost,
           "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
 
-    return assignment, current_score
+    return assignment, current_score, []

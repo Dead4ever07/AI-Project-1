@@ -34,6 +34,12 @@ def _accounting_cost(today, yesterday, min_occupancy):
     return max(0.0, (today - min_occupancy) / 400.0 * today ** (0.5 + diff / 50.0))
 
 
+def _accounting_cost_for_day(d, n_days, daily_occupancy, min_occupancy):
+    if d == n_days:
+        return _accounting_cost_last_day(daily_occupancy[d], min_occupancy)
+    return _accounting_cost(daily_occupancy[d], daily_occupancy[d + 1], min_occupancy)
+
+
 def total_accounting_cost(daily_occupancy, n_days, min_occupancy):
     """Returns the total accounting cost for the full occupancy array."""
     total = _accounting_cost_last_day(daily_occupancy[n_days], min_occupancy)
@@ -109,21 +115,23 @@ def delta_cost(
         fam_id, new_day, family_size, choices
     ) - _preference_penalty(fam_id, old_day, family_size, choices)
 
+    affected = set()
+    for d in (old_day, new_day):
+        affected.add(d)
+        if d - 1 >= 1:
+            affected.add(d - 1)
+
+    cost_before = sum(_accounting_cost_for_day(d, n_days, daily_occupancy, min_occupancy) for d in affected)
+
     # Put the family in the new date to calculate the accounting cost
     daily_occupancy[old_day] -= n
     daily_occupancy[new_day] += n
 
-    new_accounting_cost = _accounting_cost_last_day(daily_occupancy[n_days], min_occupancy)
-    yesterday = daily_occupancy[n_days]
-    for day in range(n_days - 1, 0, -1):
-        today = daily_occupancy[day]
-        new_accounting_cost += _accounting_cost(today, yesterday, min_occupancy)
-        yesterday = today
+    cost_after = sum(_accounting_cost_for_day(d, n_days, daily_occupancy, min_occupancy) for d in affected)
 
-    accounting_delta = new_accounting_cost - old_accounting_cost
 
     # Put the family in the old date
     daily_occupancy[old_day] += n
     daily_occupancy[new_day] -= n
 
-    return preference_delta, accounting_delta
+    return preference_delta, cost_after - cost_before

@@ -410,7 +410,12 @@ function handleEvent(ev) {
     setStatus("done");
 
     const algoVal = document.getElementById("sel-algo").value;
-    const idx = algoVal === 'hill_climbing' ? 0 : (algoVal === 'simulated_annealing' ? 1 : 2);
+    let idx = 0;
+    if (algoVal === 'hill_climbing') idx = 0;
+    else if (algoVal === 'simulated_annealing') idx = 1;
+    else if (algoVal === 'lp_solution') idx = 2;
+    else if (algoVal === 'hybrid') idx = 3;
+    
     compareChart.data.datasets[0].data[idx] = d.preference;
     compareChart.data.datasets[1].data[idx] = d.accounting;
     compareChart.data.datasets[2].data[idx] = d.score;
