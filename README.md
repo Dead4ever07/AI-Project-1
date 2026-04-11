@@ -1,12 +1,6 @@
-# AI-Project-1 - Santa's Workshop Tour
+# AI 1º Project - Santa's Workshop Tour
 
-[Problem Link](https://www.kaggle.com/competitions/santa-workshop-tour-2019/overview)
 
-1. Represent the problem in a state class
-    - It shall include every detailed so that an evaluation function can accuratly give us a value
-
-1. Design the frontend (Recomended Flask)
-    - It shall have a dashbord like GUI with a modern look
     - Further information representation shall be discussed
     - The frontend should also allow for parameter tweaking using the following UI elements:
         - [Input](https://ui.shadcn.com/docs/components/radix/input)
@@ -15,9 +9,6 @@
         - [Checkbox](https://ui.shadcn.com/docs/components/radix/checkbox)
         - [Radio Group](https://ui.shadcn.com/docs/components/radix/radio-group)
         - [Switch](https://ui.shadcn.com/docs/components/radix/switch)
-
-
-
 
 
 1. Create an evaluation function that gives us a "score" like value
@@ -44,3 +35,23 @@
     1. Genetic Algorithms:
         - Generates multiple random solutions and then motates them, chooses the best N solutions and repeats the process
         - A good idea of the algorithm might be the [Wiki](https://en.wikipedia.org/wiki/Genetic_algorithm)
+
+
+## How to run the code
+
+Fist lets create a venv in order to manage the requirements without braking the system packages
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Then we execute the app
+
+
+```bash
+python3 app.py
+```
+
+Then in a browser we open a the link `http://127.0.0.1:8080`
