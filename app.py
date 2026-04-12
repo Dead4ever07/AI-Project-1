@@ -69,6 +69,58 @@ def index():
     return render_template("index.html", data_files=data_files)
 
 
+def _save_to_output(algorithm_name, assignment):
+    df = pd.DataFrame({"assigned_day": assignment})
+    df.index.name = "family_id"
+    file_path = OUTPUT_DIR / f"{algorithm_name}_submission.csv"
+    df.to_csv(file_path)
+    print(f"Saved results to {file_path}")
+
+def _run_algo_task(algorithm, sub, family_size, choices, n_days, min_occ, max_occ):
+    global _active_module
+    if algorithm == "hill_climbing":
+        from algorithms import hill_climbing
+        hill_climbing._callback = _emit
+        hill_climbing._stop = False
+        _active_module = hill_climbing
+        result = hill_climbing.run(sub, family_size, choices, n_days, min_occ, max_occ)
+    elif algorithm == "lp_solution":
+        from algorithms import lp_solution
+        lp_solution._callback = _emit
+        lp_solution._stop = False
+        _active_module = lp_solution
+        result = lp_solution.run(sub, family_size, choices, n_days, min_occ, max_occ)
+    elif algorithm == "simulated_annealing":
+        from algorithms import simulated_annealing
+        simulated_annealing._callback = _emit
+        simulated_annealing._stop = False
+        _active_module = simulated_annealing
+        result = simulated_annealing.run(sub, family_size, choices, n_days, min_occ, max_occ)
+    elif algorithm == "hybrid":
+        from algorithms import hybrid_solution
+        hybrid_solution._callback = _emit
+        hybrid_solution._stop = False
+        _active_module = hybrid_solution
+        result = hybrid_solution.run(sub, family_size, choices, n_days, min_occ, max_occ)                
+    elif algorithm == "genetic":
+        from algorithms import genetic_algorithm
+        genetic_algorithm._callback = _emit
+        genetic_algorithm._stop = False
+        _active_module = genetic_algorithm
+        result = genetic_algorithm.run(sub, family_size, choices, n_days, min_occ, max_occ)          
+    elif algorithm == "hill_climbing_random":
+        from algorithms import random_start_hill_climbing
+        random_start_hill_climbing._callback = _emit
+        random_start_hill_climbing._stop = False
+        _active_module = random_start_hill_climbing
+        result = random_start_hill_climbing.run(sub, family_size, choices, n_days, min_occ, max_occ)
+    else:
+        raise ValueError(f"Unknown algorithm: {algorithm}")
+    
+    assignment = result[0]
+    _save_to_output(algorithm, assignment)
+    return result
+
 @app.route("/run", methods=["POST"])
 def run_algorithm():
     global _run_active, _run_queue, _run_result
@@ -114,44 +166,7 @@ def run_algorithm():
     def worker():
         global _run_active, _run_result, _active_module
         try:
-            if algorithm == "hill_climbing":
-                from algorithms import hill_climbing
-                hill_climbing._callback = _emit
-                hill_climbing._stop = False
-                _active_module = hill_climbing
-                result = hill_climbing.run(sub, family_size, choices, n_days, min_occ, max_occ)
-            elif algorithm == "lp_solution":
-                from algorithms import lp_solution
-                lp_solution._callback = _emit
-                lp_solution._stop = False
-                _active_module = lp_solution
-                result = lp_solution.run(sub, family_size, choices, n_days, min_occ, max_occ)
-            elif algorithm == "simulated_annealing":
-                from algorithms import simulated_annealing
-                simulated_annealing._callback = _emit
-                simulated_annealing._stop = False
-                _active_module = simulated_annealing
-                result = simulated_annealing.run(sub, family_size, choices, n_days, min_occ, max_occ)
-            elif algorithm == "hybrid":
-                from algorithms import hybrid_solution
-                hybrid_solution._callback = _emit
-                hybrid_solution._stop = False
-                _active_module = hybrid_solution
-                result = hybrid_solution.run(sub, family_size, choices, n_days, min_occ, max_occ)                
-            elif algorithm == "genetic":
-                from algorithms import genetic_algorithm
-                genetic_algorithm._callback = _emit
-                genetic_algorithm._stop = False
-                _active_module = genetic_algorithm
-                result = genetic_algorithm.run(sub, family_size, choices, n_days, min_occ, max_occ)          
-            elif algorithm == "hill_climbing_random":
-                from algorithms import random_start_hill_climbing
-                random_start_hill_climbing._callback = _emit
-                random_start_hill_climbing._stop = False
-                _active_module = random_start_hill_climbing
-                result = random_start_hill_climbing.run(sub, family_size, choices, n_days, min_occ, max_occ)
-
-
+            result = _run_algo_task(algorithm, sub, family_size, choices, n_days, min_occ, max_occ)
             assignment = result[0]
             with _state_lock:
                 _run_result["assignment"]  = assignment.tolist()
@@ -166,6 +181,81 @@ def run_algorithm():
             with _state_lock:
                 _run_active = False
                 _active_module = None
+            _run_queue.put({"type": "stream_close"})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify({"status": "started"})
+
+@app.route("/run_all", methods=["POST"])
+def run_all_algorithms():
+    global _run_active, _run_queue, _run_result
+
+    with _state_lock:
+        if _run_active:
+            return jsonify({"error": "An algorithm is already running"}), 409
+
+        body = request.get_json(force=True)
+        data_name = body.get("data_file", "")
+        data_path = INPUT_DIR / data_name
+
+        try:
+            with open(data_path, "r") as f:
+                header = f.readline().strip()
+                if "number_days" in header:
+                    vals = f.readline().strip().split(",")
+                    n_days  = int(vals[0])
+                    max_occ = int(vals[1])
+                    min_occ = int(vals[2])
+                    data = pd.read_csv(data_path, skiprows=2, index_col="family_id")
+                else:
+                    n_days = 100
+                    min_occ = 125
+                    max_occ = 300
+                    data = pd.read_csv(data_path, index_col="family_id")
+
+            family_size = data["n_people"].values
+            choices     = data[[f"choice_{i}" for i in range(10)]].values
+            
+            from algorithms.initial_solution import generate_initial_solution
+            sub_orig = generate_initial_solution(family_size, choices, n_days, min_occ, max_occ)
+                
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        _run_queue = queue.Queue()
+        _run_result.clear()
+        _run_active = True
+
+    def worker():
+        global _run_active, _run_result, _active_module
+        algorithms = ["hill_climbing", "simulated_annealing", "genetic", "hill_climbing_random", "lp_solution", "hybrid"]
+        try:
+            for algo in algorithms:
+                if _active_module and getattr(_active_module, "_stop", False):
+                    break
+                _emit({"type": "algo_start", "algorithm": algo})
+                sub = sub_orig.copy()
+                result = _run_algo_task(algo, sub, family_size, choices, n_days, min_occ, max_occ)
+                
+                # Store the LAST run's result for visualization if needed, 
+                # or we could keep them all. For now, let's keep the last one.
+                assignment = result[0]
+                with _state_lock:
+                    _run_result["assignment"]  = assignment.tolist()
+                    _run_result["choices"]     = choices.tolist()
+                    _run_result["family_size"] = family_size.tolist()
+                    _run_result["n_days"]      = n_days
+                    _run_result["min_occ"]     = min_occ
+                    _run_result["max_occ"]     = max_occ
+            
+            _emit({"type": "all_done"})
+        except Exception as exc:
+            _run_queue.put({"type": "error", "message": str(exc)})
+        finally:
+            with _state_lock:
+                _run_active = False
+                _active_module = None
+            _run_queue.put({"type": "stream_close"})
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"status": "started"})
@@ -178,7 +268,7 @@ def stream():
             try:
                 ev = _run_queue.get(timeout=30)
                 yield f"data: {json.dumps(ev, cls=_NumpyEncoder)}\n\n"
-                if ev.get("type") in ("done", "error"):
+                if ev.get("type") in ("stream_close", "error"):
                     break
             except queue.Empty:
                 yield 'data: {"type":"ping"}\n\n'

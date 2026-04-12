@@ -93,6 +93,7 @@
 
           <div class="d-flex gap-2 flex-wrap">
             <button id="btn-run"  class="btn btn-run  btn-sm">▶ Run</button>
+            <button id="btn-run-all" class="btn btn-run btn-sm" style="background: var(--purple); color: white;">▶ Run All</button>
             <button id="btn-stop" class="btn btn-stop btn-sm" style="display:none">■ Stop</button>
             <button id="btn-dl"   class="btn btn-dl   btn-sm" style="display:none">⬇ Download CSV</button>
           </div>
@@ -309,6 +310,111 @@ const runtimeChart = new Chart(ctxRuntime, {
 let evtSource = null;
 let iteration = 0;
 let startTime = 0;
+let isRunAll = false;
+
+function showPostGraphs() {
+    document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-run-all").disabled = false;
+    document.getElementById("btn-stop").style.display = "none";
+    document.getElementById("btn-dl").style.display = "inline-block";
+
+    document.getElementById("post-graphs").style.display = "flex";
+    document.getElementById("post-graphs").style.flexWrap = "wrap";
+    
+    fetch('/data/occupancy').then(r => r.json()).then(data => {
+      const ctxOcc = document.getElementById('canvas-occupancy').getContext('2d');
+      const bgColorsOcc = data.occupancy.map(v => (v < data.min_occ || v > data.max_occ) ? '#e05252' : '#4c9be8');
+      chartOccupancy = new Chart(ctxOcc, {
+        type: 'bar',
+        data: {
+          labels: data.days,
+          datasets: [
+            {
+              type: 'line',
+              label: 'Min (' + data.min_occ + ')',
+              data: Array(data.days.length).fill(data.min_occ),
+              borderColor: '#2ecc71',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'line',
+              label: 'Max (' + data.max_occ + ')',
+              data: Array(data.days.length).fill(data.max_occ),
+              borderColor: '#e74c3c',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'bar',
+              label: 'Occupancy',
+              data: data.occupancy,
+              backgroundColor: bgColorsOcc
+            }
+          ]
+        },
+        options: { ...chartDefaults }
+      });
+    });
+
+    fetch('/data/choices').then(r => r.json()).then(data => {
+      const ctxCb = document.getElementById('canvas-choices-bar').getContext('2d');
+      const rankLabels = Array.from({length: 10}, (_, i) => "Choice " + i).concat(["Not top-10"]);
+      chartChoicesBar = new Chart(ctxCb, {
+        type: 'bar',
+        data: {
+          labels: rankLabels,
+          datasets: [{
+            label: 'Families',
+            data: data.rank_counts,
+            backgroundColor: ['#1a9850','#66bd63','#a6d96a','#d9ef8b','#ffffbf','#fee08b','#fdae61','#f46d43','#d73027','#a50026','#800000']
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+
+      const ctxCp = document.getElementById('canvas-choices-pie').getContext('2d');
+      chartChoicesPie = new Chart(ctxCp, {
+        type: 'pie',
+        data: {
+          labels: ["Top-3 choices", "Choice 4-10", "Not in top-10"],
+          datasets: [{
+            data: data.pie_data,
+            backgroundColor: ["#2ecc71", "#f39c12", "#e74c3c"],
+            borderColor: '#23272f',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#e8eaf0", font: { size: 11 } } }
+          }
+        }
+      });
+    });
+
+    fetch('/data/family_size').then(r => r.json()).then(data => {
+      const ctxFs = document.getElementById('canvas-family-size').getContext('2d');
+      chartFamilySize = new Chart(ctxFs, {
+        type: 'bar',
+        data: {
+          labels: data.sizes,
+          datasets: [{
+            label: 'Number of Families',
+            data: data.counts,
+            backgroundColor: '#9b59b6'
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+    });
+}
 
 document.getElementById("sel-data").addEventListener("change", () => {
   compareChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null, null]);
@@ -411,13 +517,38 @@ function handleEvent(ev) {
     return;
   }
 
+  if (d.type === "algo_start") {
+    addLog(`>>> Starting algorithm: ${d.algorithm.replace("_", " ")}`, "log-iter");
+    document.getElementById("sel-algo").value = d.algorithm;
+    // We don't reset everything because we want to see the progress
+    return;
+  }
+
+  if (d.type === "stream_close") {
+    if (evtSource) {
+      evtSource.close();
+      evtSource = null;
+    }
+    return;
+  }
+
+  if (d.type === "all_done") {
+    addLog(`All algorithms completed! Files saved to output/`, "log-done");
+    setStatus("done");
+    showPostGraphs();
+    return;
+  }
+
   if (d.type === "done") {
     const runTimeSecs = (Date.now() - startTime) / 1000;
     document.getElementById("stat-total").textContent = fmt(d.score);
     document.getElementById("stat-pref").textContent  = fmt(d.preference);
     document.getElementById("stat-acc").textContent   = fmt(d.accounting);
     addLog(`Done! Final cost: ${fmt(d.score)} in ${runTimeSecs.toFixed(2)}s`, "log-done");
-    setStatus("done");
+    
+    if (!isRunAll) {
+      setStatus("done");
+    }
 
     const algoVal = document.getElementById("sel-algo").value;
     let idx = 0;
@@ -551,6 +682,7 @@ function handleEvent(ev) {
 if (!document.getElementById("sel-data").options.length) {
   document.getElementById("input-warning").style.display = "block";
   document.getElementById("btn-run").disabled = true;
+  document.getElementById("btn-run-all").disabled = true;
 }
 
 document.getElementById("btn-stop").addEventListener("click", async () => {
@@ -569,6 +701,7 @@ document.getElementById("btn-run").addEventListener("click", async () => {
   };
 
   document.getElementById("btn-run").disabled = true;
+  document.getElementById("btn-run-all").disabled = true;
   document.getElementById("btn-stop").style.display = "inline-block";
   document.getElementById("btn-stop").disabled = false;
   setStatus("running");
@@ -585,6 +718,45 @@ document.getElementById("btn-run").addEventListener("click", async () => {
     addLog("Failed to start: " + err.error, "log-err");
     setStatus("error");
     document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-run-all").disabled = false;
+    return;
+  }
+
+  evtSource = new EventSource("/stream");
+  evtSource.onmessage = e => handleEvent(JSON.parse(e.data));
+  evtSource.onerror   = () => {
+    evtSource.close();
+    evtSource = null;
+  };
+});
+
+document.getElementById("btn-run-all").addEventListener("click", async () => {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  resetCharts();
+
+  const body = {
+    data_file: document.getElementById("sel-data").value,
+  };
+
+  document.getElementById("btn-run").disabled = true;
+  document.getElementById("btn-run-all").disabled = true;
+  document.getElementById("btn-stop").style.display = "inline-block";
+  document.getElementById("btn-stop").disabled = false;
+  setStatus("running");
+  addLog(`Starting all algorithms on ${body.data_file}…`);
+
+  const resp = await fetch("/run_all", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json();
+    addLog("Failed to start: " + err.error, "log-err");
+    setStatus("error");
+    document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-run-all").disabled = false;
     return;
   }
 
