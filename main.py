@@ -9,9 +9,9 @@ BASE_DIR = Path(__file__).parent
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
-DATA_FILE = INPUT_DIR / "easy_input.csv"
+DATA_FILE = INPUT_DIR / "family_data.csv"
 SUBMISSION_FILE = (
-    INPUT_DIR / "easy_sample_sumbmission.csv"
+    INPUT_DIR / "sample_sumbmission.csv"
 )
 
 

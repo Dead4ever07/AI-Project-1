@@ -40,6 +40,7 @@ def run_algorithms(
         ("genetic_algorithm", genetic_algorithm.run),
         ("lp_solution", lp_solution.run),
         ("hybrid_solution", hybrid_solution.run),
+        ("random_start_hill_climbing", hill_climbing.run)
     ]
 
     for name, algorithm in algorithms:

@@ -85,6 +85,7 @@
               <option value="hill_climbing">Hill Climbing</option>
               <option value="simulated_annealing">Simulated Annealing</option>
               <option value="genetic">Genetic Algorithm</option>
+              <option value="hill_climbing_random">Hill Climbing Random Start</option>
               <option value="lp_solution">LP Solution</option>
               <option value="hybrid">Hybrid (LP + Hill Climbing)</option>
             </select>
@@ -254,21 +255,21 @@ const ctxCompare = document.getElementById("chart-compare").getContext("2d");
 const compareChart = new Chart(ctxCompare, {
   type: 'bar',
   data: {
-    labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm','LP Solution', 'Hybrid'],
+    labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm', 'Hill Climbing Random Start','LP Solution', 'Hybrid'],
     datasets: [
       {
         label: 'Total Cost',
-        data: [null, null, null, null, null],
+        data: [null, null, null, null, null, null],
         backgroundColor: '#4c9be8',
       },
       {
         label: 'Preference Penalty',
-        data: [null, null, null, null, null],
+        data: [null, null, null, null, null, null],
         backgroundColor: '#f39c12',
       },
       {
         label: 'Accounting Cost',
-        data: [null, null, null, null, null],
+        data: [null, null, null, null, null, null],
         backgroundColor: '#e74c3c',
       }
     ]
@@ -289,10 +290,10 @@ const ctxRuntime = document.getElementById("chart-runtime").getContext("2d");
 const runtimeChart = new Chart(ctxRuntime, {
   type: 'bar',
   data: {
-    labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm','LP Solution', 'Hybrid'],
+    labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm', 'Hill Climbing Random Start','LP Solution', 'Hybrid'],
     datasets: [{
       label: 'Runtime (s)',
-      data: [null, null, null, null, null],
+      data: [null, null, null, null, null, null],
       backgroundColor: '#9b59b6',
     }]
   },
@@ -310,9 +311,9 @@ let iteration = 0;
 let startTime = 0;
 
 document.getElementById("sel-data").addEventListener("change", () => {
-  compareChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null]);
+  compareChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null, null]);
   compareChart.update();
-  runtimeChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null]);
+  runtimeChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null, null]);
   runtimeChart.update();
 });
 
@@ -405,6 +406,11 @@ function handleEvent(ev) {
     return;
   }
 
+  if (d.type === "restart") {
+    addLog(`--- Restart ${d.restart}: Best score so far ${fmt(d.best_score)} ---`, "log-iter");
+    return;
+  }
+
   if (d.type === "done") {
     const runTimeSecs = (Date.now() - startTime) / 1000;
     document.getElementById("stat-total").textContent = fmt(d.score);
@@ -418,8 +424,9 @@ function handleEvent(ev) {
     if (algoVal === 'hill_climbing') idx = 0;
     else if (algoVal === 'simulated_annealing') idx = 1;
     else if (algoVal === 'genetic') idx = 2;
-    else if (algoVal === 'lp_solution') idx = 3;
-    else if (algoVal === 'hybrid') idx = 4;
+    else if (algoVal === 'hill_climbing_random') idx = 3;
+    else if (algoVal === 'lp_solution') idx = 4;
+    else if (algoVal === 'hybrid') idx = 5;
     
     compareChart.data.datasets[0].data[idx] = d.score;
     compareChart.data.datasets[1].data[idx] = d.preference;

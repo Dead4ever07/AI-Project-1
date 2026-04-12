@@ -144,6 +144,13 @@ def run_algorithm():
                 genetic_algorithm._stop = False
                 _active_module = genetic_algorithm
                 result = genetic_algorithm.run(sub, family_size, choices, n_days, min_occ, max_occ)          
+            elif algorithm == "hill_climbing_random":
+                from algorithms import random_start_hill_climbing
+                random_start_hill_climbing._callback = _emit
+                random_start_hill_climbing._stop = False
+                _active_module = random_start_hill_climbing
+                result = random_start_hill_climbing.run(sub, family_size, choices, n_days, min_occ, max_occ)
+
 
             assignment = result[0]
             with _state_lock:

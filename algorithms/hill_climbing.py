@@ -2,7 +2,7 @@ import numpy as np
 from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
 
 MAX_ITERATIONS = 100
-SORT = False
+SORT = True
 
 _callback = None
 _stop = False
@@ -11,7 +11,7 @@ def emit(ev: dict):
     if _callback is not None:
         _callback(ev)
 
-def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
+def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy, emit_start=True, emit_done=True):
     assignment = submission["assigned_day"].values.copy()
 
     daily_occupancy = build_daily_occupancy(assignment, family_size, n_days)
@@ -27,9 +27,10 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     print(
         f"Initial score: {current_score:.2f}  (preference: {preference_penalty:.2f}  accounting: {accounting_cost:.2f})"
     )
-    emit({"type": "start", "score": current_score,
-          "preference": preference_penalty, "accounting": accounting_cost,
-          "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
+    if emit_start:
+        emit({"type": "start", "score": current_score,
+              "preference": preference_penalty, "accounting": accounting_cost,
+              "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
 
     if SORT:
         family_ids = np.argsort(family_size)
@@ -106,8 +107,9 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     else:
         print(f"Stopping: reached max iterations ({MAX_ITERATIONS}).")
 
-    emit({"type": "done", "score": current_score,
-          "preference": preference_penalty, "accounting": accounting_cost,
-          "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
+    if emit_done:
+        emit({"type": "done", "score": current_score,
+              "preference": preference_penalty, "accounting": accounting_cost,
+              "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
 
     return assignment, current_score, []
