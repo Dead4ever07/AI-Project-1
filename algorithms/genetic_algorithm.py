@@ -6,6 +6,7 @@ from algorithms.cost import (
     total_accounting_cost,
     _preference_penalty,
 )
+from algorithms.initial_solution import build_individual
 
 POPULATION_SIZE = 15  # number of candidate solutions kept at once
 N_GENERATIONS = 500  # max evolution cycles
@@ -39,7 +40,7 @@ def _total_score(preference_cost, accounting_cost):
     return preference_cost + accounting_cost
 
 
-def _build_individual(
+def init_population(
     initial_assignment,
     family_sizes,
     family_choices,
@@ -49,75 +50,22 @@ def _build_individual(
     rng,
 ):
     """
-    Build one valid assignment by placing families one at a time in random order.
-    Each family picks their most-preferred day that still has room.
+    Build the initial population by repeatedly applying the randomized build_individual procedure. 
+    Each run produces a valid solution with different random choices, giving us a diverse starting population.
     """
-    n_families = len(initial_assignment)
-    daily_occupancy = np.zeros(n_days + 1, dtype=np.int32)
-    assignment = np.empty(n_families, dtype=initial_assignment.dtype)
-
-    for family_id in rng.permutation(n_families):
-        family_size = family_sizes[family_id]
-        preferred_days = family_choices[family_id].copy()
-
-        # Try each preferred day in order; fall back to least-crowded if all are full
-        for day in preferred_days:
-            if daily_occupancy[day] + family_size <= max_occupancy:
-                break
-        else:
-            day = preferred_days[
-                np.argmin([daily_occupancy[d] for d in preferred_days])
-            ]
-
-        daily_occupancy[day] += family_size
-        assignment[family_id] = day
-
-    # Repair: move families from the busiest day into any under-occupied day
-    for day in range(1, n_days + 1):
-        for _ in range(n_families):
-            if daily_occupancy[day] >= min_occupancy:
-                break
-            busiest_day = int(np.argmax(daily_occupancy[1:]) + 1)
-            if busiest_day == day:
-                break
-            for family_id in range(n_families):
-                if assignment[family_id] == busiest_day:
-                    family_size = family_sizes[family_id]
-                    if daily_occupancy[busiest_day] - family_size >= min_occupancy:
-                        daily_occupancy[busiest_day] -= family_size
-                        daily_occupancy[day] += family_size
-                        assignment[family_id] = day
-                        break
-            else:
-                break
-
-    return assignment, daily_occupancy
-
-
-def _init_population(
-    initial_assignment,
-    family_sizes,
-    family_choices,
-    n_days,
-    min_occupancy,
-    max_occupancy,
-    rng,
-):
     population, occupancies, per_individual_costs = [], [], []
 
     assignment = initial_assignment.copy()
-    daily_occupancy = build_daily_occupancy(
-        initial_assignment, family_sizes, n_days
-    )
+    daily_occupancy = build_daily_occupancy(initial_assignment, family_sizes, n_days)
     while len(population) < POPULATION_SIZE:
-        assignment, daily_occupancy = _build_individual(
+        assignment, daily_occupancy = build_individual(
             initial_assignment,
             family_sizes,
             family_choices,
             n_days,
             min_occupancy,
             max_occupancy,
-            rng
+            rng,
         )
 
         costs = cost_function(
@@ -370,7 +318,7 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
     )
 
     rng = np.random.default_rng()
-    population, occupancies, per_individual_costs = _init_population(
+    population, occupancies, per_individual_costs = init_population(
         initial_assignment,
         family_sizes,
         family_choices,
