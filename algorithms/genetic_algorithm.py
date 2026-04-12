@@ -253,8 +253,6 @@ def _local_search(
 ):
     """
     Greedily improve an assignment by trying to move each family to a better day.
-    Uses delta_cost throughout — no cost_function calls inside the loop.
-    Called sparingly (every LOCAL_SEARCH_EVERY generations) as a fine-tuning step.
     """
     preference_cost, accounting_cost = costs
 
