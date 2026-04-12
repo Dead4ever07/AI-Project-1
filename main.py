@@ -6,9 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from flask import Flask, jsonify, render_template, request, Response, send_file
 
 BASE_DIR = Path(__file__).parent
