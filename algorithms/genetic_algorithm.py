@@ -7,14 +7,17 @@ from algorithms.cost import (
     _preference_penalty,
 )
 
-POPULATION_SIZE = 20  # number of candidate solutions kept at once
+POPULATION_SIZE = 15  # number of candidate solutions kept at once
 N_GENERATIONS = 500  # max evolution cycles
 TOURNAMENT_SIZE = 3  # candidates compared in each selection draw
 CROSSOVER_RATE = 0.80  # chance two parents breed (vs. cloning one parent)
 MUTATION_RATE = 0.04  # per-family chance of a random day reassignment
 ELITE_COUNT = 2  # top solutions copied unchanged to the next generation
-PLATEAU_LIMIT = 20  # stop early if best score hasn't improved this many generations
+PLATEAU_LIMIT = 10  # stop early if best score hasn't improved this many generations
 LOCAL_SEARCH_EVERY = 5  # how often (in generations) to polish the best individual
+CROSSOVER_MAX_ATTEMPTS = (
+    5  # retries before crossover gives up and falls back to mutation-only
+)
 
 PREFERENCE_PENALTIES = [
     (0, 0),
@@ -44,13 +47,10 @@ def _build_individual(
     min_occupancy,
     max_occupancy,
     rng,
-    shuffle_prob,
 ):
     """
     Build one valid assignment by placing families one at a time in random order.
     Each family picks their most-preferred day that still has room.
-    shuffle_prob controls how much we deviate from the original preferences,
-    which keeps the population diverse.
     """
     n_families = len(initial_assignment)
     daily_occupancy = np.zeros(n_days + 1, dtype=np.int32)
@@ -59,8 +59,6 @@ def _build_individual(
     for family_id in rng.permutation(n_families):
         family_size = family_sizes[family_id]
         preferred_days = family_choices[family_id].copy()
-        # if rng.random() < shuffle_prob:
-        #     rng.shuffle(preferred_days)
 
         # Try each preferred day in order; fall back to least-crowded if all are full
         for day in preferred_days:
@@ -105,33 +103,24 @@ def _init_population(
     max_occupancy,
     rng,
 ):
-    """
-    Build the starting population. The first individual is the original submission.
-    The rest are variants with increasing randomness so that we have a diverse range of solutions.
-
-    """
     population, occupancies, per_individual_costs = [], [], []
 
-    for i in range(POPULATION_SIZE):
-        if i == 0:
-            assignment = initial_assignment.copy()
-            daily_occupancy = build_daily_occupancy(
-                initial_assignment, family_sizes, n_days
-            )
-        else:
-            shuffle_prob = 0.15 + 0.70 * (i / POPULATION_SIZE)
-            assignment, daily_occupancy = _build_individual(
-                initial_assignment,
-                family_sizes,
-                family_choices,
-                n_days,
-                min_occupancy,
-                max_occupancy,
-                rng,
-                shuffle_prob,
-            )
+    assignment = initial_assignment.copy()
+    daily_occupancy = build_daily_occupancy(
+        initial_assignment, family_sizes, n_days
+    )
+    while len(population) < POPULATION_SIZE:
+        assignment, daily_occupancy = _build_individual(
+            initial_assignment,
+            family_sizes,
+            family_choices,
+            n_days,
+            min_occupancy,
+            max_occupancy,
+            rng
+        )
 
-        cost_breakdown = cost_function(
+        costs = cost_function(
             assignment,
             family_sizes,
             family_choices,
@@ -139,15 +128,10 @@ def _init_population(
             min_occupancy,
             max_occupancy,
         )
-        costs = (
-            cost_breakdown
-            if cost_breakdown is not None
-            else (float("inf"), float("inf"))
-        )
-
-        population.append(assignment)
-        occupancies.append(daily_occupancy)
-        per_individual_costs.append(costs)
+        if costs is not None:
+            population.append(assignment)
+            occupancies.append(daily_occupancy)
+            per_individual_costs.append(costs)
 
     return population, occupancies, per_individual_costs
 
@@ -186,50 +170,54 @@ def _crossover(
 
     Preference cost is accumulated incrementally during construction.
     Accounting cost is computed once at the end (it depends on the full occupancy array).
+
+    Returns (assignment, occupancy, costs) on success, or None if the child violates
+    occupancy bounds after CROSSOVER_MAX_ATTEMPTS independent attempts.
     """
-    n_families = len(parent_a_assignment)
-    child_occupancy = np.zeros(n_days + 1, dtype=np.int32)
-    child_assignment = np.empty(n_families, dtype=parent_a_assignment.dtype)
-    prefer_parent_a = rng.integers(0, 2, size=n_families).astype(bool)
-    child_preference_cost = 0.0
+    for _ in range(CROSSOVER_MAX_ATTEMPTS):
+        n_families = len(parent_a_assignment)
+        child_occupancy = np.zeros(n_days + 1, dtype=np.int32)
+        child_assignment = np.empty(n_families, dtype=parent_a_assignment.dtype)
+        prefer_parent_a = rng.integers(0, 2, size=n_families).astype(bool)
+        child_preference_cost = 0.0
 
-    for family_id in rng.permutation(n_families):
-        family_size = family_sizes[family_id]
-        days_to_try = (
-            [parent_a_assignment[family_id], parent_b_assignment[family_id]]
-            if prefer_parent_a[family_id]
-            else [parent_b_assignment[family_id], parent_a_assignment[family_id]]
-        ) + list(family_choices[family_id])
+        for family_id in rng.permutation(n_families):
+            family_size = family_sizes[family_id]
+            days_to_try = (
+                [parent_a_assignment[family_id], parent_b_assignment[family_id]]
+                if prefer_parent_a[family_id]
+                else [parent_b_assignment[family_id], parent_a_assignment[family_id]]
+            ) + list(family_choices[family_id])
 
-        for day in days_to_try:
-            if child_occupancy[day] + family_size <= max_occupancy:
-                break
-        else:
-            day = family_choices[
-                family_id,
-                np.argmin([child_occupancy[d] for d in family_choices[family_id]]),
-            ]
+            for day in days_to_try:
+                if child_occupancy[day] + family_size <= max_occupancy:
+                    break
+            else:
+                day = family_choices[
+                    family_id,
+                    np.argmin([child_occupancy[d] for d in family_choices[family_id]]),
+                ]
 
-        child_occupancy[day] += family_size
-        child_assignment[family_id] = day
-        child_preference_cost += _preference_penalty(
-            family_id, day, family_sizes, family_choices
-        )
+            child_occupancy[day] += family_size
+            child_assignment[family_id] = day
+            child_preference_cost += _preference_penalty(
+                family_id, day, family_sizes, family_choices
+            )
 
-    # Validate occupancy; if invalid, signal with inf costs
-    if np.any(child_occupancy[1:] > max_occupancy) or np.any(
-        child_occupancy[1:] < min_occupancy
-    ):
-        return child_assignment, child_occupancy, (float("inf"), float("inf"))
+        if not (
+            np.any(child_occupancy[1:] > max_occupancy)
+            or np.any(child_occupancy[1:] < min_occupancy)
+        ):
+            child_accounting_cost = total_accounting_cost(
+                child_occupancy, n_days, min_occupancy
+            )
+            return (
+                child_assignment,
+                child_occupancy,
+                (child_preference_cost, child_accounting_cost),
+            )
 
-    child_accounting_cost = total_accounting_cost(
-        child_occupancy, n_days, min_occupancy
-    )
-    return (
-        child_assignment,
-        child_occupancy,
-        (child_preference_cost, child_accounting_cost),
-    )
+    return None
 
 
 def _mutate(
@@ -351,6 +339,8 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
 
     All cost tracking uses (preference_cost, accounting_cost) tuples updated via delta_cost;
     cost_function is called only once per individual at initialisation time.
+    Invalid individuals are never stored — crossover retries up to CROSSOVER_MAX_ATTEMPTS
+    times before falling back to a cloned-and-mutated parent.
     """
     initial_assignment = submission["assigned_day"].values.copy()
 
@@ -415,6 +405,9 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
         while len(next_population) < POPULATION_SIZE:
             if _stop:
                 break
+
+            child, child_occupancy, child_costs = None, None, None
+
             if rng.random() < CROSSOVER_RATE:
                 parent_a, parent_a_occ, parent_a_costs = _tournament_select(
                     population, occupancies, per_individual_costs, rng
@@ -422,7 +415,7 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
                 parent_b, parent_b_occ, parent_b_costs = _tournament_select(
                     population, occupancies, per_individual_costs, rng
                 )
-                child, child_occupancy, child_costs = _crossover(
+                crossover_result = _crossover(
                     parent_a,
                     parent_a_occ,
                     parent_a_costs,
@@ -436,7 +429,11 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
                     max_occupancy,
                     rng,
                 )
-            else:
+                if crossover_result is not None:
+                    child, child_occupancy, child_costs = crossover_result
+
+            # Fall back to cloning a tournament winner if crossover was skipped or failed
+            if child is None:
                 child, child_occupancy, child_costs = _tournament_select(
                     population, occupancies, per_individual_costs, rng
                 )
@@ -490,11 +487,11 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
         # Track progress and check for plateau
         best_in_generation_index = int(np.argmin(scores))
         best_score_in_generation = scores[best_in_generation_index]
-        valid_scores = [s for s in scores if s < float("inf")]
+        scores = [s for s in scores if s < float("inf")]
         print(
             f"Gen {generation:4d}: best={best_score_in_generation:.2f}  "
-            f"avg={np.mean(valid_scores):.2f}  "
-            f"valid={len(valid_scores)}/{POPULATION_SIZE}  global_best={best_score:.2f}  "
+            f"avg={np.mean(scores):.2f}  "
+            f"global_best={best_score:.2f}  "
             f"plateau={generations_without_improvement}/{PLATEAU_LIMIT}"
             + ("  *** NEW BEST ***" if best_score_in_generation < best_score else "")
         )
