@@ -15,7 +15,7 @@ PREFERENCE_PENALTIES = [
 ]
 
 
-def _preference_penalty(fam_id, day, family_size, choices):
+def preference_penalty(fam_id, day, family_size, choices):
     n = family_size[fam_id]
     for rank in range(10):
         if day == choices[fam_id, rank]:
@@ -70,7 +70,7 @@ def cost_function(
 
     for f, d in enumerate(prediction):
         daily_occupancy[d] += family_size[f]
-        penalty += _preference_penalty(f, d, family_size, choices)
+        penalty += preference_penalty(f, d, family_size, choices)
 
     for occupancy in daily_occupancy[1:]:
         if occupancy > max_occupancy or occupancy < min_occupancy:
@@ -111,9 +111,9 @@ def delta_cost(
         return None
 
     # Preference delta
-    preference_delta = _preference_penalty(
+    preference_delta = preference_penalty(
         fam_id, new_day, family_size, choices
-    ) - _preference_penalty(fam_id, old_day, family_size, choices)
+    ) - preference_penalty(fam_id, old_day, family_size, choices)
 
     affected = set()
     for d in (old_day, new_day):

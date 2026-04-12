@@ -4,21 +4,19 @@ from algorithms.cost import (
     cost_function,
     delta_cost,
     total_accounting_cost,
-    _preference_penalty,
+    preference_penalty,
 )
 from algorithms.initial_solution import build_individual
 
-POPULATION_SIZE = 15  # number of candidate solutions kept at once
-N_GENERATIONS = 500  # max evolution cycles
-TOURNAMENT_SIZE = 3  # candidates compared in each selection draw
-CROSSOVER_RATE = 0.80  # chance two parents breed (vs. cloning one parent)
-MUTATION_RATE = 0.04  # per-family chance of a random day reassignment
-ELITE_COUNT = 2  # top solutions copied unchanged to the next generation
-PLATEAU_LIMIT = 10  # stop early if best score hasn't improved this many generations
-LOCAL_SEARCH_EVERY = 5  # how often (in generations) to polish the best individual
-CROSSOVER_MAX_ATTEMPTS = (
-    5  # retries before crossover gives up and falls back to mutation-only
-)
+POPULATION_SIZE = 15 
+N_GENERATIONS = 500 
+TOURNAMENT_SIZE = 3 
+CROSSOVER_RATE = 0.5 
+MUTATION_RATE = 0.02 
+ELITE_COUNT = 5
+PLATEAU_LIMIT = 10 
+LOCAL_SEARCH_EVERY = 3
+
 
 PREFERENCE_PENALTIES = [
     (0, 0),
@@ -99,11 +97,7 @@ def _tournament_select(population, occupancies, per_individual_costs, rng):
 
 def _crossover(
     parent_a_assignment,
-    parent_a_occupancy,
-    parent_a_costs,
     parent_b_assignment,
-    parent_b_occupancy,
-    parent_b_costs,
     family_sizes,
     family_choices,
     n_days,
@@ -112,60 +106,88 @@ def _crossover(
     rng,
 ):
     """
-    Combine two parents into a child. For each family, randomly prefer one parent's
-    day; if it's full, try the other; if still full, fall back to the family's own
-    preferences. Families are placed in random order to avoid systematic bias.
+    Build a child by combining two parents.
 
-    Preference cost is accumulated incrementally during construction.
-    Accounting cost is computed once at the end (it depends on the full occupancy array).
-
-    Returns (assignment, occupancy, costs) on success, or None if the child violates
-    occupancy bounds after CROSSOVER_MAX_ATTEMPTS independent attempts.
+    - Assign families in random order
+    - Prefer one parent randomly per family
+    - Try parent days first, then fallback to preferences
+    - Enforce max occupancy constraints
     """
-    for _ in range(CROSSOVER_MAX_ATTEMPTS):
-        n_families = len(parent_a_assignment)
-        child_occupancy = np.zeros(n_days + 1, dtype=np.int32)
-        child_assignment = np.empty(n_families, dtype=parent_a_assignment.dtype)
-        prefer_parent_a = rng.integers(0, 2, size=n_families).astype(bool)
-        child_preference_cost = 0.0
 
-        for family_id in rng.permutation(n_families):
-            family_size = family_sizes[family_id]
-            days_to_try = (
-                [parent_a_assignment[family_id], parent_b_assignment[family_id]]
-                if prefer_parent_a[family_id]
-                else [parent_b_assignment[family_id], parent_a_assignment[family_id]]
-            ) + list(family_choices[family_id])
+    n_families = len(parent_a_assignment)
 
-            for day in days_to_try:
-                if child_occupancy[day] + family_size <= max_occupancy:
-                    break
-            else:
-                day = family_choices[
-                    family_id,
-                    np.argmin([child_occupancy[d] for d in family_choices[family_id]]),
-                ]
+    child_assignment = np.empty(n_families, dtype=parent_a_assignment.dtype)
+    child_occupancy = np.zeros(n_days + 1, dtype=np.int32)
+    child_preference_cost = 0.0
 
-            child_occupancy[day] += family_size
-            child_assignment[family_id] = day
-            child_preference_cost += _preference_penalty(
-                family_id, day, family_sizes, family_choices
+    # Randomly decide which parent each family prefers
+    prefers_parent_a = rng.integers(0, 2, size=n_families).astype(bool)
+
+    # Process families in random order
+    for family_id in rng.permutation(n_families):
+
+        family_size = family_sizes[family_id]
+
+        # Build priority list of days
+        if prefers_parent_a[family_id]:
+            preferred_days = [
+                parent_a_assignment[family_id],
+                parent_b_assignment[family_id],
+            ]
+        else:
+            preferred_days = [
+                parent_b_assignment[family_id],
+                parent_a_assignment[family_id],
+            ]
+
+        preferred_days += list(family_choices[family_id])
+
+        # Try to place family
+        chosen_day = None
+
+        for day in preferred_days:
+            if child_occupancy[day] + family_size <= max_occupancy:
+                chosen_day = day
+                break
+
+        if chosen_day is None:
+            chosen_day = min(
+                family_choices[family_id],
+                key=lambda d: child_occupancy[d],
             )
 
-        if not (
-            np.any(child_occupancy[1:] > max_occupancy)
-            or np.any(child_occupancy[1:] < min_occupancy)
-        ):
-            child_accounting_cost = total_accounting_cost(
-                child_occupancy, n_days, min_occupancy
-            )
-            return (
-                child_assignment,
-                child_occupancy,
-                (child_preference_cost, child_accounting_cost),
-            )
+        # Assign family
+        child_assignment[family_id] = chosen_day
+        child_occupancy[chosen_day] += family_size
 
-    return None
+        # Update cost
+        child_preference_cost += preference_penalty(
+            family_id,
+            chosen_day,
+            family_sizes,
+            family_choices,
+        )
+
+    # Validate occupancy constraints
+    valid = np.all(child_occupancy[1:] <= max_occupancy) and np.all(
+        child_occupancy[1:] >= min_occupancy
+    )
+
+    if not valid:
+        return None
+
+    # Compute accounting cost only if valid
+    child_accounting_cost = total_accounting_cost(
+        child_occupancy,
+        n_days,
+        min_occupancy,
+    )
+
+    return (
+        child_assignment,
+        child_occupancy,
+        (child_preference_cost, child_accounting_cost),
+    )
 
 
 def _mutate(
@@ -277,13 +299,12 @@ def emit(event: dict):
 
 def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occupancy):
     """
-    Run the genetic algorithm. Returns (best_assignment, best_score, score_history).
+    Run the genetic algorithm.
 
-    Flow:
-      1. Seed the population from the given submission.
-      2. Each generation: keep the elite, breed the rest, occasionally polish the best.
-      3. Stop early if no improvement for PLATEAU_LIMIT generations.
-      4. Run a final local search on the best solution found.
+    1. Seed the population from the given submission.
+    2. Each generation: keep the elite, breed the rest, occasionally polish the best.
+    3. Stop early if no improvement for PLATEAU_LIMIT generations.
+    4. Run a final local search on the best solution found.
 
     All cost tracking uses (preference_cost, accounting_cost) tuples updated via delta_cost;
     cost_function is called only once per individual at initialisation time.
@@ -300,18 +321,20 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
         min_occupancy,
         max_occupancy,
     )
+
     if initial_costs is None:
         raise ValueError("Starting solution is invalid!")
+    
     preference_cost, accounting_cost = initial_costs
 
     print(
-        f"Initial score: {sum(initial_costs):.2f}  "
+        f"Initial score: {(preference_cost + accounting_cost):.2f}  "
         f"(preference: {preference_cost:.2f}  accounting: {accounting_cost:.2f})"
     )
     emit(
         {
             "type": "start",
-            "score": sum(initial_costs),
+            "score": (preference_cost + accounting_cost),
             "preference": preference_cost,
             "accounting": accounting_cost,
         }
@@ -343,7 +366,7 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
             print("Stopping: stop requested.")
             break
 
-        # Always carry the top ELITE_COUNT individuals into the next generation
+        # Always carry the top elite individuals into the next generation
         elite_indices = np.argsort(scores)[:ELITE_COUNT]
         next_population = [population[i].copy() for i in elite_indices]
         next_occupancies = [occupancies[i].copy() for i in elite_indices]
@@ -357,19 +380,16 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
             child, child_occupancy, child_costs = None, None, None
 
             if rng.random() < CROSSOVER_RATE:
-                parent_a, parent_a_occ, parent_a_costs = _tournament_select(
+                parent_a, _, _ = _tournament_select(
                     population, occupancies, per_individual_costs, rng
                 )
-                parent_b, parent_b_occ, parent_b_costs = _tournament_select(
+                parent_b, _, _ = _tournament_select(
                     population, occupancies, per_individual_costs, rng
                 )
+                
                 crossover_result = _crossover(
                     parent_a,
-                    parent_a_occ,
-                    parent_a_costs,
                     parent_b,
-                    parent_b_occ,
-                    parent_b_costs,
                     family_sizes,
                     family_choices,
                     n_days,
@@ -469,23 +489,6 @@ def run(submission, family_sizes, family_choices, n_days, min_occupancy, max_occ
         if generations_without_improvement >= PLATEAU_LIMIT:
             print(f"Stopping early: no improvement for {PLATEAU_LIMIT} generations.")
             break
-
-    # Final polish on the overall best solution
-    if not _stop:
-        print("\nRunning final local search polish...")
-        best_assignment, best_occupancy, best_costs = _local_search(
-            best_assignment,
-            best_occupancy,
-            best_costs,
-            family_sizes,
-            family_choices,
-            n_days,
-            min_occupancy,
-            max_occupancy,
-            rng,
-        )
-        best_score = _total_score(*best_costs)
-        score_history.append([N_GENERATIONS + 1, best_score])
 
     emit(
         {
