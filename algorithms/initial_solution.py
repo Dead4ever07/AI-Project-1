@@ -1,14 +1,12 @@
 import numpy as np
 import pandas as pd
 
-def generate_initial_solution(family_size, choices, n_days, min_occ, max_occ, seed=42):
+def generate_initial_solution(family_size, choices, n_days, min_occ, max_occ):
     """
     Generate an initial valid submission satisfying the problem constraints.
     
-    Randomization Logic:
-      - A random number generator is initialized using the provided `seed` (default 42).
-      - Families are first sorted by size (largest first). Families of the same size
-        are then randomly shuffled to prevent deterministic tie-breaking.
+    Logic:
+      - Families are first sorted by size (largest first).
       - When placing a family, instead of strictly picking the single best valid day,
         the algorithm identifies the top 3 best valid days (e.g., those furthest below
         the minimum occupancy) and selects one at random.
@@ -28,13 +26,12 @@ def generate_initial_solution(family_size, choices, n_days, min_occ, max_occ, se
         pd.DataFrame: A DataFrame with index 'family_id' and column 'assigned_day'
     """
     print(f"Calculating the initial Solution")
-    rng = np.random.default_rng(seed)
     
     n_families = len(family_size)
     assigned_days = np.zeros(n_families, dtype=int)
     
 
-    noisy_sizes = family_size + rng.random(n_families) * 0.5
+    noisy_sizes = family_size
     sorted_families = np.argsort(-noisy_sizes)
     
     day_occupancy = {day: 0 for day in range(1, n_days + 1)}
