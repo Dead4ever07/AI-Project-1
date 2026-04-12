@@ -2,8 +2,7 @@ import numpy as np
 import algorithms.hill_climbing as hill_climbing
 from algorithms.initial_solution import build_individual
 from algorithms.cost import build_daily_occupancy, cost_function
-
-N_RESTARTS = 5
+from config import N_RESTARTS
 
 _callback = None
 _stop = False

@@ -1,18 +1,5 @@
 import numpy as np
-
-PREFERENCE_PENALTIES = [
-    (0, 0),  # choice_0
-    (50, 0),  # choice_1
-    (50, 9),  # choice_2
-    (100, 9),  # choice_3
-    (200, 9),  # choice_4
-    (200, 18),  # choice_5
-    (300, 18),  # choice_6
-    (300, 36),  # choice_7
-    (400, 36),  # choice_8
-    (500, 235),  # choice_9
-    (500, 434),  # not in top 10
-]
+from config import PREFERENCE_PENALTIES
 
 
 def preference_penalty(fam_id, day, family_size, choices):

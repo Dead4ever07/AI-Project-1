@@ -1,8 +1,9 @@
 import numpy as np
 from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
-
-MAX_ITERATIONS = 100
-SORT = True
+from config import (
+    HC_MAX_ITERATIONS as MAX_ITERATIONS,
+    HC_SORT_FAMILIES as SORT,
+)
 
 _callback = None
 _stop = False

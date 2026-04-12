@@ -1,17 +1,20 @@
 import numpy as np
 from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
-
-INITIAL_TEMPERATURE = 10.0
-COOLING_SCHEDULE = 0.995
-PLATEAU_LIMIT = 100
-MAX_ITERATIONS = 500
+from config import (
+    SA_INITIAL_TEMPERATURE as INITIAL_TEMPERATURE,
+    SA_COOLING_SCHEDULE as COOLING_SCHEDULE,
+    SA_PLATEAU_LIMIT as PLATEAU_LIMIT,
+    SA_MAX_ITERATIONS as MAX_ITERATIONS,
+)
 
 _callback = None
 _stop = False
 
+
 def emit(ev: dict):
     if _callback is not None:
         _callback(ev)
+
 
 def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
     assignment = submission["assigned_day"].values.copy()
@@ -30,9 +33,16 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
         f"Initial score: {current_score:.2f}  (preference: {preference_penalty:.2f}  accounting: {accounting_cost:.2f})"
     )
 
-    emit({"type": "start", "score": current_score,
-          "preference": preference_penalty, "accounting": accounting_cost,
-          "occupancy": daily_occupancy.tolist(), "assignment": assignment.tolist()})
+    emit(
+        {
+            "type": "start",
+            "score": current_score,
+            "preference": preference_penalty,
+            "accounting": accounting_cost,
+            "occupancy": daily_occupancy.tolist(),
+            "assignment": assignment.tolist(),
+        }
+    )
 
     best_assignment = assignment.copy()
     best_score = current_score
@@ -83,7 +93,9 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
             total_delta = preference_delta + accounting_delta
 
             accepted_move = False
-            if total_delta < 0 or rng.random() < np.exp(-total_delta / max(temperature, min_temperature)):
+            if total_delta < 0 or rng.random() < np.exp(
+                -total_delta / max(temperature, min_temperature)
+            ):
                 accepted_move = True
 
             if accepted_move:
@@ -108,17 +120,33 @@ def run(submission, family_size, choices, n_days, min_occupancy, max_occupancy):
             f"T={temperature:.4f}  accepted={accepted}  improved={improved}  "
             f"plateau={iterations_since_last_improvement}/{PLATEAU_LIMIT}"
         )
-        emit({"type": "iteration", "score": current_score, "best_score": best_score,
-              "preference": preference_penalty, "accounting": accounting_cost,
-              "iteration": iteration, "temperature": round(temperature, 6),
-              "accepted": accepted, "improved": improved})
+        emit(
+            {
+                "type": "iteration",
+                "score": current_score,
+                "best_score": best_score,
+                "preference": preference_penalty,
+                "accounting": accounting_cost,
+                "iteration": iteration,
+                "temperature": round(temperature, 6),
+                "accepted": accepted,
+                "improved": improved,
+            }
+        )
 
         temperature = max(temperature * COOLING_SCHEDULE, min_temperature)
         iterations_since_last_improvement += 1
 
-    emit({"type": "done", "score": best_score,
-          "preference": preference_penalty, "accounting": accounting_cost,
-          "occupancy": daily_occupancy.tolist(), "assignment": best_assignment.tolist()})
+    emit(
+        {
+            "type": "done",
+            "score": best_score,
+            "preference": preference_penalty,
+            "accounting": accounting_cost,
+            "occupancy": daily_occupancy.tolist(),
+            "assignment": best_assignment.tolist(),
+        }
+    )
 
     print(f"\nBest score found: {best_score:.2f}")
     return best_assignment, best_score, scores_trajectory

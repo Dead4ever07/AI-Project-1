@@ -7,30 +7,16 @@ from algorithms.cost import (
     preference_penalty,
 )
 from algorithms.initial_solution import build_individual
-
-POPULATION_SIZE = 15 
-N_GENERATIONS = 500 
-TOURNAMENT_SIZE = 3 
-CROSSOVER_RATE = 0.5 
-MUTATION_RATE = 0.02 
-ELITE_COUNT = 5
-PLATEAU_LIMIT = 10 
-LOCAL_SEARCH_EVERY = 3
-
-
-PREFERENCE_PENALTIES = [
-    (0, 0),
-    (50, 0),
-    (50, 9),
-    (100, 9),
-    (200, 9),
-    (200, 18),
-    (300, 18),
-    (300, 36),
-    (400, 36),
-    (500, 235),
-    (500, 434),
-]
+from config import (
+    GA_POPULATION_SIZE as POPULATION_SIZE,
+    GA_N_GENERATIONS as N_GENERATIONS,
+    GA_TOURNAMENT_SIZE as TOURNAMENT_SIZE,
+    GA_CROSSOVER_RATE as CROSSOVER_RATE,
+    GA_MUTATION_RATE as MUTATION_RATE,
+    GA_ELITE_COUNT as ELITE_COUNT,
+    GA_PLATEAU_LIMIT as PLATEAU_LIMIT,
+    GA_LOCAL_SEARCH_EVERY as LOCAL_SEARCH_EVERY,
+)
 
 
 def _total_score(preference_cost, accounting_cost):

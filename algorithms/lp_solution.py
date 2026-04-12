@@ -3,12 +3,15 @@ import pandas as pd
 from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
 from algorithms.cost import build_daily_occupancy, PREFERENCE_PENALTIES, cost_function
+from config import (
+    LP_DIFFERENCE_PENALTY_FIRST as DIFFERENCE_PENALTY_FIRST,
+    LP_DIFFERENCE_PENALTY_SECOND as DIFFERENCE_PENALTY_SECOND,
+    PREFERENCE_PENALTIES,
+)
 
 _callback = None
 _stop = False
 
-DIFFERENCE_PENALTY_FIRST = 50.0
-DIFFERENCE_PENALTY_SECOND = 10.0
 
 def emit(ev: dict):
     if _callback is not None:

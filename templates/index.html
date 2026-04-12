@@ -455,12 +455,6 @@ function pushData(iter, score, bestScore, pref, acc) {
   costChart.data.datasets[1].data.push(pref);
   costChart.data.datasets[2].data.push(acc);
 
-  if (costChart.data.labels.length > 100) {
-    costChart.data.labels.shift();
-    costChart.data.datasets[0].data.shift();
-    costChart.data.datasets[1].data.shift();
-    costChart.data.datasets[2].data.shift();
-  }
   costChart.update("none");
 }
 
