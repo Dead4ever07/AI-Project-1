@@ -27,7 +27,7 @@ def generate_initial_solution(family_size, choices, n_days, min_occ, max_occ, se
     Returns:
         pd.DataFrame: A DataFrame with index 'family_id' and column 'assigned_day'
     """
-    print(f"Calculating the initial Solution (seed={seed})")
+    print(f"Calculating the initial Solution")
     rng = np.random.default_rng(seed)
     
     n_families = len(family_size)
