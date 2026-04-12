@@ -2,7 +2,7 @@ import numpy as np
 from algorithms.cost import build_daily_occupancy, cost_function, delta_cost
 
 MAX_ITERATIONS = 100
-SORT = False
+SORT = True
 
 _callback = None
 _stop = False
