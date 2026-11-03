@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Santa's Workshop Tour</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --red:    #e74c3c;
+      --green:  #2ecc71;
+      --blue:   #4c9be8;
+      --purple: #9b59b6;
+      --orange: #f39c12;
+      --dark:   #1a1d23;
+      --card:   #23272f;
+      --border: #2e3340;
+      --text:   #e8eaf0;
+      --muted:  #8892a4;
+    }
+    body { background: var(--dark); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
+    .navbar { background: var(--card) !important; border-bottom: 1px solid var(--border); }
+    .navbar-brand { font-weight: 700; letter-spacing: .5px; color: var(--orange) !important; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+    .card-header { background: rgba(255,255,255,.04); border-bottom: 1px solid var(--border); font-weight: 600; font-size: .85rem; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+    .form-label { font-size: .85rem; color: var(--muted); margin-bottom: 3px; }
+    .form-select, .form-control { background: #1a1d23; border-color: var(--border); color: var(--text); font-size: .9rem; }
+    .form-select:focus, .form-control:focus { background: #1a1d23; border-color: var(--blue); color: var(--text); box-shadow: 0 0 0 2px rgba(76,155,232,.25); }
+    .form-select option { background: #1a1d23; }
+    .btn-run { background: var(--green); border: none; color: #111; font-weight: 700; padding: .5rem 1.6rem; }
+    .btn-run:hover:not(:disabled) { background: #27ae60; color: #111; }
+    .btn-run:disabled { opacity: .45; }
+    .btn-dl   { background: var(--blue); border: none; color: #fff; font-weight: 600; }
+    .btn-dl:hover { background: #2e86d0; color: #fff; }
+    .btn-stop { background: var(--red); border: none; color: #fff; font-weight: 600; padding: .5rem 1.2rem; }
+    .btn-stop:hover { background: #c0392b; color: #fff; }
+    .stat-val { font-size: 1.45rem; font-weight: 700; }
+    .stat-label { font-size: .78rem; color: var(--muted); }
+    .badge-running { background: var(--orange); color: #111; }
+    .badge-done    { background: var(--green);  color: #111; }
+    .badge-idle    { background: var(--border); color: var(--muted); }
+    .badge-error   { background: var(--red);    color: #fff; }
+    #log-box { background: #13151a; border: 1px solid var(--border); border-radius: 8px; height: 160px; overflow-y: auto; font-family: "Courier New", monospace; font-size: .8rem; color: #a8b4c8; padding: 10px 14px; }
+    .log-ts   { color: var(--muted); }
+    .log-iter { color: var(--blue); }
+    .log-done { color: var(--green); font-weight: 600; }
+    .log-err  { color: var(--red);  font-weight: 600; }
+    canvas    { max-height: 280px; }
+    .graph-img { width: 100%; border-radius: 8px; display: none; }
+    .iter-badge { font-size: .75rem; padding: .25em .6em; }
+    .table { color: var(--text); --bs-table-bg: transparent; --bs-table-border-color: var(--border); }
+    .table th { font-weight: 600; color: var(--muted); border-bottom-width: 1px; }
+    .table td, .table th { padding: 8px 16px; border-bottom: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg mb-3">
+  <div class="container-fluid px-4">
+    <span class="navbar-brand">Santa's Workshop Tour</span>
+    <span id="status-badge" class="badge badge-idle">Idle</span>
+  </div>
+</nav>
+
+<div class="container-fluid px-4 pb-4">
+
+  <div class="row g-3 mb-3">
+
+    <div class="col-lg-5 col-xl-4">
+      <div class="card h-100">
+        <div class="card-header">Configuration</div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Family data CSV</label>
+            <select id="sel-data" class="form-select form-select-sm">
+              {% for val, lbl in data_files %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Algorithm</label>
+            <select id="sel-algo" class="form-select form-select-sm">
+              <option value="hill_climbing">Hill Climbing</option>
+              <option value="simulated_annealing">Simulated Annealing</option>
+              <option value="genetic">Genetic Algorithm</option>
+              <option value="hill_climbing_random">Hill Climbing Random Start</option>
+              <option value="lp_solution">LP Solution</option>
+              <option value="hybrid">Hybrid (LP + Hill Climbing)</option>
+            </select>
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <button id="btn-run"  class="btn btn-run  btn-sm">▶ Run</button>
+            <button id="btn-run-all" class="btn btn-run btn-sm" style="background: var(--purple); color: white;">▶ Run All</button>
+            <button id="btn-stop" class="btn btn-stop btn-sm" style="display:none">■ Stop</button>
+            <button id="btn-dl"   class="btn btn-dl   btn-sm" style="display:none">⬇ Download CSV</button>
+          </div>
+          <div id="input-warning" class="mt-2 text-warning small" style="display:none">
+            ⚠ No CSV files found in <code>input/</code>. Make sure you run
+            <code>python app.py</code> from the project root.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7 col-xl-8">
+      <div class="card h-100">
+        <div class="card-header">Live Statistics</div>
+        <div class="card-body">
+          <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3 text-center">
+              <div class="stat-val text-info" id="stat-total">—</div>
+              <div class="stat-label">Total Cost</div>
+            </div>
+            <div class="col-6 col-md-3 text-center">
+              <div class="stat-val text-warning" id="stat-pref">—</div>
+              <div class="stat-label">Preference Penalty</div>
+            </div>
+            <div class="col-6 col-md-3 text-center">
+              <div class="stat-val text-danger" id="stat-acc">—</div>
+              <div class="stat-label">Accounting Cost</div>
+            </div>
+            <div class="col-6 col-md-3 text-center">
+              <div class="stat-val text-success" id="stat-iter">—</div>
+              <div class="stat-label">Iteration</div>
+            </div>
+          </div>
+          <div id="log-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12">
+      <div class="card h-100">
+        <div class="card-header">Run Comparison</div>
+        <div class="card-body" style="padding:12px; display:flex; align-items:center;">
+          <canvas id="chart-compare" style="max-height: 250px;"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">Costs</div>
+        <div class="card-body" style="padding:12px"><canvas id="chart-cost" style="max-height: 250px;"></canvas></div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">Runtime Comparison (seconds)</div>
+        <div class="card-body" style="padding:12px"><canvas id="chart-runtime" style="max-height: 250px;"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3" id="post-graphs" style="display:none">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Daily Workshop Occupancy</div>
+        <div class="card-body text-center" style="padding:12px">
+          <canvas id="canvas-occupancy"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Family Preference Satisfaction</div>
+        <div class="card-body text-center" style="padding:12px">
+          <div class="row">
+            <div class="col-md-8"><canvas id="canvas-choices-bar"></canvas></div>
+            <div class="col-md-4"><canvas id="canvas-choices-pie"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6 offset-md-3">
+      <div class="card">
+        <div class="card-header">Family Size Distribution</div>
+        <div class="card-body text-center" style="padding:12px">
+          <canvas id="canvas-family-size"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const chartDefaults = {
+  animation: false,
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: { legend: { labels: { color: "#e8eaf0", font: { size: 11 } } } },
+  scales: {
+    x: { ticks: { color: "#8892a4", maxTicksLimit: 12 }, grid: { color: "#2e3340" } },
+    y: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } }
+  }
+};
+
+const ctxCost =document.getElementById("chart-cost").getContext("2d");
+const costChart = new Chart(ctxCost, {
+  type: "line",
+  data: {
+    labels: [],
+    datasets: [{
+      label: "Total Cost",
+      data: [],
+      borderColor: "#4c9be8",
+      backgroundColor: "rgba(76,155,232,.12)",
+      fill: true,
+      tension: 0.3,
+      pointRadius: 2,
+      borderWidth: 2
+    }, {
+      label: "Preference Penalty",
+      data: [],
+      borderColor: "#f39c12",
+      backgroundColor: "transparent",
+      fill: false,
+      tension: 0.3,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      borderDash: [4, 3]
+    }, {
+      label: "Accounting Cost",
+      data: [],
+      borderColor: "#e74c3c",
+      backgroundColor: "transparent",
+      fill: false,
+      tension: 0.3,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      borderDash: [4, 3]
+    }]
+  },
+  options: { 
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      y: { 
+        type: 'logarithmic',
+        ticks: { color: "#8892a4" }, 
+        grid: { color: "#2e3340" } 
+      }
+    }
+  }
+});
+
+const ctxCompare = document.getElementById("chart-compare").getContext("2d");
+const compareChart = new Chart(ctxCompare, {
+  type: 'bar',
+  data: {
+    labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm', 'Hill Climbing Random Start','LP Solution', 'Hybrid'],
+    datasets: [
+      {
+        label: 'Total Cost',
+        data: [null, null, null, null, null, null],
+        backgroundColor: '#4c9be8',
+      },
+      {
+        label: 'Preference Penalty',
+        data: [null, null, null, null, null, null],
+        backgroundColor: '#f39c12',
+      },
+      {
+        label: 'Accounting Cost',
+        data: [null, null, null, null, null, null],
+        backgroundColor: '#e74c3c',
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      x: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } },
+      y: { type: 'linear', ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } }
+    },
+    plugins: {
+      legend: { labels: { color: "#e8eaf0", font: { size: 10 } } }
+    }
+  }
+});
+
+const ctxRuntime = document.getElementById("chart-runtime").getContext("2d");
+const runtimeChart = new Chart(ctxRuntime, {
+  type: 'bar',
+  data: {
+    labels: ['Hill Climbing', 'Simulated Annealing', 'Genetic Algorithm', 'Hill Climbing Random Start','LP Solution', 'Hybrid'],
+    datasets: [{
+      label: 'Runtime (s)',
+      data: [null, null, null, null, null, null],
+      backgroundColor: '#9b59b6',
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      x: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } },
+      y: { ticks: { color: "#8892a4" }, grid: { color: "#2e3340" } }
+    }
+  }
+});
+
+let evtSource = null;
+let iteration = 0;
+let startTime = 0;
+let isRunAll = false;
+
+function showPostGraphs() {
+    document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-run-all").disabled = false;
+    document.getElementById("btn-stop").style.display = "none";
+    document.getElementById("btn-dl").style.display = "inline-block";
+
+    document.getElementById("post-graphs").style.display = "flex";
+    document.getElementById("post-graphs").style.flexWrap = "wrap";
+    
+    fetch('/data/occupancy').then(r => r.json()).then(data => {
+      const ctxOcc = document.getElementById('canvas-occupancy').getContext('2d');
+      const bgColorsOcc = data.occupancy.map(v => (v < data.min_occ || v > data.max_occ) ? '#e05252' : '#4c9be8');
+      chartOccupancy = new Chart(ctxOcc, {
+        type: 'bar',
+        data: {
+          labels: data.days,
+          datasets: [
+            {
+              type: 'line',
+              label: 'Min (' + data.min_occ + ')',
+              data: Array(data.days.length).fill(data.min_occ),
+              borderColor: '#2ecc71',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'line',
+              label: 'Max (' + data.max_occ + ')',
+              data: Array(data.days.length).fill(data.max_occ),
+              borderColor: '#e74c3c',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'bar',
+              label: 'Occupancy',
+              data: data.occupancy,
+              backgroundColor: bgColorsOcc
+            }
+          ]
+        },
+        options: { ...chartDefaults }
+      });
+    });
+
+    fetch('/data/choices').then(r => r.json()).then(data => {
+      const ctxCb = document.getElementById('canvas-choices-bar').getContext('2d');
+      const rankLabels = Array.from({length: 10}, (_, i) => "Choice " + i).concat(["Not top-10"]);
+      chartChoicesBar = new Chart(ctxCb, {
+        type: 'bar',
+        data: {
+          labels: rankLabels,
+          datasets: [{
+            label: 'Families',
+            data: data.rank_counts,
+            backgroundColor: ['#1a9850','#66bd63','#a6d96a','#d9ef8b','#ffffbf','#fee08b','#fdae61','#f46d43','#d73027','#a50026','#800000']
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+
+      const ctxCp = document.getElementById('canvas-choices-pie').getContext('2d');
+      chartChoicesPie = new Chart(ctxCp, {
+        type: 'pie',
+        data: {
+          labels: ["Top-3 choices", "Choice 4-10", "Not in top-10"],
+          datasets: [{
+            data: data.pie_data,
+            backgroundColor: ["#2ecc71", "#f39c12", "#e74c3c"],
+            borderColor: '#23272f',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#e8eaf0", font: { size: 11 } } }
+          }
+        }
+      });
+    });
+
+    fetch('/data/family_size').then(r => r.json()).then(data => {
+      const ctxFs = document.getElementById('canvas-family-size').getContext('2d');
+      chartFamilySize = new Chart(ctxFs, {
+        type: 'bar',
+        data: {
+          labels: data.sizes,
+          datasets: [{
+            label: 'Number of Families',
+            data: data.counts,
+            backgroundColor: '#9b59b6'
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+    });
+}
+
+document.getElementById("sel-data").addEventListener("change", () => {
+  compareChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null, null]);
+  compareChart.update();
+  runtimeChart.data.datasets.forEach(ds => ds.data = [null, null, null, null, null, null]);
+  runtimeChart.update();
+});
+
+let chartOccupancy = null;
+let chartChoicesBar = null;
+let chartChoicesPie = null;
+let chartFamilySize = null;
+
+const fmt = n => n == null ? "—" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 1 });
+
+function setStatus(state) {
+  const badge = document.getElementById("status-badge");
+  const map = { idle: ["Idle","badge-idle"], running: ["Running…","badge-running"],
+                done: ["Done ✓","badge-done"], error: ["Error","badge-error"] };
+  const [txt, cls] = map[state] || ["?","badge-idle"];
+  badge.textContent = txt;
+  badge.className = "badge " + cls;
+}
+
+function addLog(text, cls="") {
+  const box = document.getElementById("log-box");
+  const ts = new Date().toLocaleTimeString();
+  const line = document.createElement("div");
+  line.innerHTML = `<span class="log-ts">[${ts}]</span> <span class="${cls}">${text}</span>`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function pushData(iter, score, bestScore, pref, acc) {
+  const lbl = String(iter);
+  costChart.data.labels.push(lbl);
+  costChart.data.datasets[0].data.push(score);
+  costChart.data.datasets[1].data.push(pref);
+  costChart.data.datasets[2].data.push(acc);
+
+  costChart.update("none");
+}
+
+function resetCharts() {
+  costChart.data.labels.length = 0;
+  costChart.data.datasets.forEach(d => d.data.length = 0);
+  costChart.update();
+  iteration = 0;
+  document.getElementById("stat-total").textContent = "—";
+  document.getElementById("stat-pref").textContent  = "—";
+  document.getElementById("stat-acc").textContent   = "—";
+  document.getElementById("stat-iter").textContent  = "—";
+  document.getElementById("post-graphs").style.display = "none";
+  document.getElementById("btn-dl").style.display = "none";
+  if (chartOccupancy) { chartOccupancy.destroy(); chartOccupancy = null; }
+  if (chartChoicesBar) { chartChoicesBar.destroy(); chartChoicesBar = null; }
+  if (chartChoicesPie) { chartChoicesPie.destroy(); chartChoicesPie = null; }
+  if (chartFamilySize) { chartFamilySize.destroy(); chartFamilySize = null; }
+}
+
+function handleEvent(ev) {
+  const d = ev;
+
+  if (d.type === "ping") return;
+
+  if (d.type === "start") {
+    startTime = Date.now();
+    addLog(`Initial cost: ${fmt(d.score)}  (pref ${fmt(d.preference)} + acc ${fmt(d.accounting)})`, "log-iter");
+    document.getElementById("stat-total").textContent = fmt(d.score);
+    document.getElementById("stat-pref").textContent  = fmt(d.preference);
+    document.getElementById("stat-acc").textContent   = fmt(d.accounting);
+    pushData(0, d.score, d.best_score ?? d.score, d.preference, d.accounting);
+    return;
+  }
+
+  if (d.type === "iteration") {
+    iteration = d.iteration;
+    document.getElementById("stat-total").textContent = fmt(d.score);
+    document.getElementById("stat-pref").textContent  = fmt(d.preference);
+    document.getElementById("stat-acc").textContent   = fmt(d.accounting);
+    document.getElementById("stat-iter").textContent  = d.iteration;
+
+    const extra = d.temperature != null
+      ? `  T=${d.temperature}  accepted=${d.accepted}  improved=${d.improved}`
+      : `  moves=${d.improvements ?? ""}`;
+    addLog(`Iter ${d.iteration}: ${fmt(d.score)}${extra}`, "log-iter");
+
+    pushData(d.iteration, d.score, d.best_score ?? null, d.preference, d.accounting);
+    return;
+  }
+
+  if (d.type === "restart") {
+    addLog(`--- Restart ${d.restart}: Best score so far ${fmt(d.best_score)} ---`, "log-iter");
+    return;
+  }
+
+  if (d.type === "algo_start") {
+    addLog(`>>> Starting algorithm: ${d.algorithm.replace("_", " ")}`, "log-iter");
+    document.getElementById("sel-algo").value = d.algorithm;
+    // We don't reset everything because we want to see the progress
+    return;
+  }
+
+  if (d.type === "stream_close") {
+    if (evtSource) {
+      evtSource.close();
+      evtSource = null;
+    }
+    return;
+  }
+
+  if (d.type === "all_done") {
+    addLog(`All algorithms completed! Files saved to output/`, "log-done");
+    setStatus("done");
+    showPostGraphs();
+    return;
+  }
+
+  if (d.type === "done") {
+    const runTimeSecs = (Date.now() - startTime) / 1000;
+    document.getElementById("stat-total").textContent = fmt(d.score);
+    document.getElementById("stat-pref").textContent  = fmt(d.preference);
+    document.getElementById("stat-acc").textContent   = fmt(d.accounting);
+    addLog(`Done! Final cost: ${fmt(d.score)} in ${runTimeSecs.toFixed(2)}s`, "log-done");
+    
+    if (!isRunAll) {
+      setStatus("done");
+    }
+
+    const algoVal = document.getElementById("sel-algo").value;
+    let idx = 0;
+    if (algoVal === 'hill_climbing') idx = 0;
+    else if (algoVal === 'simulated_annealing') idx = 1;
+    else if (algoVal === 'genetic') idx = 2;
+    else if (algoVal === 'hill_climbing_random') idx = 3;
+    else if (algoVal === 'lp_solution') idx = 4;
+    else if (algoVal === 'hybrid') idx = 5;
+    
+    compareChart.data.datasets[0].data[idx] = d.score;
+    compareChart.data.datasets[1].data[idx] = d.preference;
+    compareChart.data.datasets[2].data[idx] = d.accounting;
+    compareChart.update();
+
+    runtimeChart.data.datasets[0].data[idx] = runTimeSecs;
+    runtimeChart.update();
+
+    document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-stop").style.display = "none";
+    document.getElementById("btn-dl").style.display = "inline-block";
+
+    document.getElementById("post-graphs").style.display = "flex";
+    document.getElementById("post-graphs").style.flexWrap = "wrap";
+    
+    fetch('/data/occupancy').then(r => r.json()).then(data => {
+      const ctxOcc = document.getElementById('canvas-occupancy').getContext('2d');
+      const bgColorsOcc = data.occupancy.map(v => (v < data.min_occ || v > data.max_occ) ? '#e05252' : '#4c9be8');
+      chartOccupancy = new Chart(ctxOcc, {
+        type: 'bar',
+        data: {
+          labels: data.days,
+          datasets: [
+            {
+              type: 'line',
+              label: 'Min (' + data.min_occ + ')',
+              data: Array(data.days.length).fill(data.min_occ),
+              borderColor: '#2ecc71',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'line',
+              label: 'Max (' + data.max_occ + ')',
+              data: Array(data.days.length).fill(data.max_occ),
+              borderColor: '#e74c3c',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              type: 'bar',
+              label: 'Occupancy',
+              data: data.occupancy,
+              backgroundColor: bgColorsOcc
+            }
+          ]
+        },
+        options: { ...chartDefaults }
+      });
+    });
+
+    fetch('/data/choices').then(r => r.json()).then(data => {
+      const ctxCb = document.getElementById('canvas-choices-bar').getContext('2d');
+      const rankLabels = Array.from({length: 10}, (_, i) => "Choice " + i).concat(["Not top-10"]);
+      chartChoicesBar = new Chart(ctxCb, {
+        type: 'bar',
+        data: {
+          labels: rankLabels,
+          datasets: [{
+            label: 'Families',
+            data: data.rank_counts,
+            backgroundColor: ['#1a9850','#66bd63','#a6d96a','#d9ef8b','#ffffbf','#fee08b','#fdae61','#f46d43','#d73027','#a50026','#800000']
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+
+      const ctxCp = document.getElementById('canvas-choices-pie').getContext('2d');
+      chartChoicesPie = new Chart(ctxCp, {
+        type: 'pie',
+        data: {
+          labels: ["Top-3 choices", "Choice 4-10", "Not in top-10"],
+          datasets: [{
+            data: data.pie_data,
+            backgroundColor: ["#2ecc71", "#f39c12", "#e74c3c"],
+            borderColor: '#23272f',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#e8eaf0", font: { size: 11 } } }
+          }
+        }
+      });
+    });
+
+    fetch('/data/family_size').then(r => r.json()).then(data => {
+      const ctxFs = document.getElementById('canvas-family-size').getContext('2d');
+      chartFamilySize = new Chart(ctxFs, {
+        type: 'bar',
+        data: {
+          labels: data.sizes,
+          datasets: [{
+            label: 'Number of Families',
+            data: data.counts,
+            backgroundColor: '#9b59b6'
+          }]
+        },
+        options: { ...chartDefaults }
+      });
+    });
+
+    return;
+  }
+
+  if (d.type === "error") {
+    addLog("Error: " + d.message, "log-err");
+    setStatus("error");
+    document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-stop").style.display = "none";
+  }
+}
+
+if (!document.getElementById("sel-data").options.length) {
+  document.getElementById("input-warning").style.display = "block";
+  document.getElementById("btn-run").disabled = true;
+  document.getElementById("btn-run-all").disabled = true;
+}
+
+document.getElementById("btn-stop").addEventListener("click", async () => {
+  await fetch("/stop", { method: "POST" });
+  addLog("Stop requested — waiting for current iteration to finish…", "log-err");
+  document.getElementById("btn-stop").disabled = true;
+});
+
+document.getElementById("btn-run").addEventListener("click", async () => {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  resetCharts();
+
+  const body = {
+    data_file: document.getElementById("sel-data").value,
+    algorithm: document.getElementById("sel-algo").value,
+  };
+
+  document.getElementById("btn-run").disabled = true;
+  document.getElementById("btn-run-all").disabled = true;
+  document.getElementById("btn-stop").style.display = "inline-block";
+  document.getElementById("btn-stop").disabled = false;
+  setStatus("running");
+  addLog(`Starting ${body.algorithm.replace("_"," ")} on ${body.data_file}…`);
+
+  const resp = await fetch("/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json();
+    addLog("Failed to start: " + err.error, "log-err");
+    setStatus("error");
+    document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-run-all").disabled = false;
+    return;
+  }
+
+  evtSource = new EventSource("/stream");
+  evtSource.onmessage = e => handleEvent(JSON.parse(e.data));
+  evtSource.onerror   = () => {
+    evtSource.close();
+    evtSource = null;
+  };
+});
+
+document.getElementById("btn-run-all").addEventListener("click", async () => {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  resetCharts();
+
+  const body = {
+    data_file: document.getElementById("sel-data").value,
+  };
+
+  document.getElementById("btn-run").disabled = true;
+  document.getElementById("btn-run-all").disabled = true;
+  document.getElementById("btn-stop").style.display = "inline-block";
+  document.getElementById("btn-stop").disabled = false;
+  setStatus("running");
+  addLog(`Starting all algorithms on ${body.data_file}…`);
+
+  const resp = await fetch("/run_all", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json();
+    addLog("Failed to start: " + err.error, "log-err");
+    setStatus("error");
+    document.getElementById("btn-run").disabled = false;
+    document.getElementById("btn-run-all").disabled = false;
+    return;
+  }
+
+  evtSource = new EventSource("/stream");
+  evtSource.onmessage = e => handleEvent(JSON.parse(e.data));
+  evtSource.onerror   = () => {
+    evtSource.close();
+    evtSource = null;
+  };
+});
+
+document.getElementById("btn-dl").addEventListener("click", () => {
+  window.location.href = "/download";
+});
+</script>
+</body>
+</html>
